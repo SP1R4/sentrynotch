@@ -76,8 +76,19 @@ questions that actually matter when you're writing up what an agent did.
 
 ## Install
 
-**Download** the latest signed build from the [Releases page](../../releases/latest), drag it to
-`/Applications`, and launch. On first run it walks you through enabling the Claude Code hook.
+**Download** the latest `.dmg` from the [Releases page](../../releases/latest) and drag
+**Sentry Notch** into Applications. On first run it walks you through enabling the Claude Code hook.
+
+The build is **unsigned** — there's no paid Apple Developer certificate behind a free, open-source
+app — so Gatekeeper will warn you the first time. Open it once with **right-click ▸ Open**, or clear
+the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/SentryNotch.app
+```
+
+Rather not trust an unsigned binary? [Build from source](#build-from-source) — it's a two-minute
+`swift build`.
 
 ### Build from source
 
