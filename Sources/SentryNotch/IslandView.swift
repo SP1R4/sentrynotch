@@ -109,7 +109,8 @@ struct IslandView: View {
                                                onRevoke: { model.revokeBypass(card.id) },
                                                onSetPolicy: { model.setPolicy($0, for: card.cwd) },
                                                onSetArming: { model.setArming($0, for: card.id) },
-                                               onInterrupt: model.canInterrupt(card) ? { model.interrupt(card) } : nil)
+                                               onInterrupt: model.canInterrupt(card) ? { model.interrupt(card) } : nil,
+                                               ambiguous: model.sessions.filter { $0.project == card.project }.count > 1)
                                     if model.expandedSessionID == card.id && model.settings.widgetOn("activity") {
                                         ActivityFeed(items: model.activity)
                                     }
@@ -1072,6 +1073,11 @@ private struct SessionRow: View {
     var onSetPolicy: (ProjectPolicy) -> Void
     var onSetArming: (SessionArming) -> Void
     var onInterrupt: (() -> Void)?
+    /// True when another visible card shares this card's project name. The
+    /// project label alone (the cwd's basename) can't tell two sessions in the
+    /// same directory apart, so a short session-id chip is shown to break the
+    /// tie — but only when it's actually needed.
+    var ambiguous: Bool = false
 
     /// A working card mimes its current tool; a card that has been quiet for
     /// more than five minutes dozes rather than staring blankly.
@@ -1102,6 +1108,7 @@ private struct SessionRow: View {
                     Text(card.project).font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(CC.text)
                     if let term = card.terminal { Tag(text: term, tint: CC.textDim) }
+                    else if ambiguous { Tag(text: String(card.id.prefix(6)), tint: CC.textFaint) }
                     // Only worth saying when it differs from the global default,
                     // otherwise every card carries a redundant badge.
                     if arming != .inherit {
