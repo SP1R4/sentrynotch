@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened runtime is required for notarization. Exactly one exception is
+         requested; resist adding more, since each one weakens the runtime.
+
+         NOT sandboxed, and it cannot be: the app writes the PreToolUse hook
+         into ~/.claude/settings.json, opens a unix socket, spawns python3 and
+         osascript, and signals other processes. That also rules out the Mac
+         App Store — direct distribution only.
+
+         Note that spawning python3/osascript needs no entitlement: they are
+         separate processes, so library validation (which governs code loaded
+         into *our* address space) does not apply. -->
+
+    <!-- Drives the local Spotify app for the now-playing widget. Pairs with
+         NSAppleEventsUsageDescription in Info.plist. The app also asks TCC
+         directly via AEDeterminePermissionToAutomateTarget so the consent
+         prompt is attributed to us rather than to a spawned osascript. -->
+    <key>com.apple.security.automation.apple-events</key><true/>
+</dict>
+</plist>

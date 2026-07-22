@@ -1,0 +1,36 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't paste licence keys, client hostnames, or command output
+        from a real engagement — this issue is public. Redact first, or email
+        instead.
+  - type: input
+    id: version
+    attributes:
+      label: Sentry Notch version
+      description: Dashboard ▸ Licence shows it at the bottom right.
+      placeholder: "1.0.0"
+    validations: { required: true }
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "14.5"
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations: { required: true }
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: Interception is armed (the switch in the notch, not just the hook installed)
+        - label: I've checked this isn't Claude Code's own prompt appearing instead

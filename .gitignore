@@ -1,0 +1,28 @@
+.build/
+.swiftpm/
+dist/
+*.app/
+*.dmg
+
+# Never commit signing or licence-issuing secrets. The private key mints free
+# licences for anyone holding it; the app only ever needs the public half.
+*.p12
+*.cer
+*.mobileprovision
+private-key*
+*-priv.txt
+secrets.env
+
+.DS_Store
+# AppleDouble metadata sidecars, created when the tree touches a non-native FS.
+._*
+
+# Cloudflare Wrangler local state/cache — may cache pulled secrets locally.
+.wrangler/
+web/worker/.dev.vars
+
+# Personal, machine-local Claude Code settings.
+.claude/settings.local.json
+
+# The public repo is published separately and must never carry the source.
+public-repo/
