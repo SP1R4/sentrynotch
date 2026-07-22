@@ -51,6 +51,44 @@ public func analyzeRisk(toolName: String, input: [String: Any], cwd: String) -> 
 
 // MARK: - Bash heuristics
 
+/// True when the command runs `rm` with BOTH a recursive and a force flag, in
+/// any order or spelling: combined (`-rf`, `-Rf`), separated (`-r … -f`), or
+/// long (`--recursive --force`).
+///
+/// The previous single regex matched only a combined *lowercase* flag glued to
+/// `rm`, so `rm -Rf` (— `-R` is idiomatic on macOS/BSD), `rm -r -f`, and
+/// `rm --recursive --force` — all equally destructive — read as no risk at all.
+private func isRecursiveForceDelete(_ cmd: String) -> Bool {
+    let tokens = shellTokens(cmd)
+    var i = 0
+    while i < tokens.count {
+        let head = tokens[i]
+        if head == "rm" || head.hasSuffix("/rm") {
+            var recursive = false, force = false
+            var j = i + 1
+            while j < tokens.count {
+                let arg = tokens[j]
+                // A shell separator ends this command; flags past it belong to
+                // whatever runs next, not to this `rm`.
+                if arg.contains(";") || arg.contains("|") || arg.contains("&") { break }
+                if arg == "--recursive" { recursive = true }
+                else if arg == "--force" { force = true }
+                else if arg.hasPrefix("-") && !arg.hasPrefix("--") {
+                    // A bundle of short flags: -rf, -Rf, -r, -f, … case-folded
+                    // because -R and -r mean the same thing.
+                    let flags = arg.dropFirst().lowercased()
+                    if flags.contains("r") { recursive = true }
+                    if flags.contains("f") { force = true }
+                }
+                if recursive && force { return true }
+                j += 1
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
 private func bashRisks(_ cmd: String) -> [(RiskLevel, String)] {
     var out: [(RiskLevel, String)] = []
     let lower = cmd.lowercased()
@@ -59,7 +97,7 @@ private func bashRisks(_ cmd: String) -> [(RiskLevel, String)] {
         cmd.range(of: pattern, options: .regularExpression) != nil
     }
 
-    if has(#"\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|-rf|-fr)\b"#) {
+    if isRecursiveForceDelete(cmd) {
         out.append((.high, "recursive force delete (rm -rf)"))
     }
     if has(#"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh|python3?)\b"#) {

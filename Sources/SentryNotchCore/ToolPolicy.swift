@@ -268,6 +268,17 @@ private let hostPatterns: [NSRegularExpression] = [
     #"\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}\b"#,
 ].compactMap { try? NSRegularExpression(pattern: $0) }
 
+/// A host that appears with an explicit URL scheme — `https://evil.zip`,
+/// `ftp://10.0.0.9`, `http://[2001:db8::1]` — is a network destination, not a
+/// filename, so its captured host bypasses the file-extension suppression that
+/// bare tokens go through. Without this, a real host on a TLD that doubles as a
+/// common extension (`.zip`, `.app`, `.sh`) hid from the scope guard entirely,
+/// even though dropping those from the extension list would flag every
+/// `release.sh` and `SentryNotch.app` as noise. Group 1 is the host, IPv6
+/// literals included in brackets.
+private let schemeHostPattern = try? NSRegularExpression(
+    pattern: #"[a-zA-Z][a-zA-Z0-9+.\-]*://(?:[^/@\s]+@)?(\[[0-9A-Fa-f:]+\]|[a-zA-Z0-9.\-]+)"#)
+
 public func outOfScopeHosts(texts: [String], scope: ScopeConfig) -> [String] {
     guard !scope.isEmpty else { return [] }
     var hosts = Set<String>()
@@ -279,6 +290,16 @@ public func outOfScopeHosts(texts: [String], scope: ScopeConfig) -> [String] {
             for m in re.matches(in: text, range: range) {
                 let token = ns.substring(with: m.range)
                 if plausibleHost(token) { hosts.insert(token) }
+            }
+        }
+        // Scheme-qualified hosts are added unconditionally (no extension
+        // suppression) — a dot or an IPv6 literal is enough to be a host.
+        if let re = schemeHostPattern {
+            for m in re.matches(in: text, range: range) where m.numberOfRanges > 1 {
+                var h = ns.substring(with: m.range(at: 1))
+                let isIPv6 = h.hasPrefix("[") && h.hasSuffix("]")
+                if isIPv6 { h = String(h.dropFirst().dropLast()) }
+                if isIPv6 || h.contains(".") { hosts.insert(h) }
             }
         }
     }
