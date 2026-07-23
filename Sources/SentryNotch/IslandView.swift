@@ -384,11 +384,13 @@ private struct CollapsedPill: View {
 
     private var showMascot: Bool { model.hasActiveSession && model.settings.mascotEnabled }
 
-    /// The right wedge shows the music source's mark whenever a track is loaded —
-    /// on its own now, so it appears even with no session working (the notch
-    /// grows a flank for it in `NotchController.collapsedSize`).
+    /// The right wedge shows the music source's mark while a track is actively
+    /// playing — on its own now, so it appears even with no session working (the
+    /// notch grows a flank for it in `NotchController.collapsedSize`). Gated on
+    /// `playing`, not merely `available`, so it disappears the moment playback
+    /// pauses or stops rather than lingering, dimmed.
     private var showMusic: Bool {
-        model.settings.widgetOn("spotify") && music.available
+        model.settings.widgetOn("spotify") && music.playing
     }
 
     /// Whether the notch is wearing side flanks at all — for either the mascots
@@ -519,7 +521,6 @@ private struct FlankMusic: View {
         VStack(spacing: 0) {
             dancing(mark)
                 .frame(width: state.flankWidth, height: state.notchHeight)
-                .opacity(playing ? 1 : 0.5)
             Spacer(minLength: 0)
         }
         .frame(width: state.flankWidth)

@@ -228,7 +228,11 @@ final class AppModel: ObservableObject {
         // existing install on upgrade.
         guard settings.widgetOn("spotify") else { music.stopPolling(); return }
         music.preference = settings.musicSource
-        music.startPolling(every: islandVisible ? 3 : 15)
+        // Poll briskly while a track plays — even with the panel closed — so the
+        // notch's dancing mark disappears within a few seconds of a pause rather
+        // than lingering until the slow idle poll. Drop back to the cheap 15s
+        // cadence once nothing is playing.
+        music.startPolling(every: (islandVisible || music.playing) ? 3 : 15)
     }
 
     private func refreshRepos() {

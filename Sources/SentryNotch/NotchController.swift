@@ -66,7 +66,7 @@ final class NotchController: NSObject {
             // present. It always grows on both sides to stay centred under the
             // hardware notch, even when only one side has content.
             let mascot = model.hasActiveSession && model.settings.mascotEnabled
-            let music = model.settings.widgetOn("spotify") && model.music.available
+            let music = model.settings.widgetOn("spotify") && model.music.playing
             let extra = (mascot || music) ? flank * 2 : 0
             return NSSize(width: n.width + extra, height: n.height + 11)
         }
@@ -155,9 +155,9 @@ final class NotchController: NSObject {
             .sink { [weak self] _ in self?.repositionCollapsed() }
             .store(in: &cancellables)
 
-        // …and as music playback starts/stops, so the now-playing mark can grow
-        // its own flank without a session working.
-        model.music.$available
+        // …and as playback starts/stops, so the now-playing mark grows its own
+        // flank while a track plays and the notch shrinks back when it pauses.
+        model.music.$playing
             .removeDuplicates()
             .sink { [weak self] _ in self?.repositionCollapsed() }
             .store(in: &cancellables)
