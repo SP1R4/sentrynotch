@@ -299,7 +299,14 @@ public func outOfScopeHosts(texts: [String], scope: ScopeConfig) -> [String] {
                 var h = ns.substring(with: m.range(at: 1))
                 let isIPv6 = h.hasPrefix("[") && h.hasSuffix("]")
                 if isIPv6 { h = String(h.dropFirst().dropLast()) }
-                if isIPv6 || h.contains(".") { hosts.insert(h) }
+                // A dotted name or IPv6 literal is a host; so is an obfuscated
+                // IP behind a scheme — a bare decimal (http://2130706433) or hex
+                // (http://0x7f000001) integer is a classic allowlist-evasion form
+                // and is worth surfacing. A scheme-less bare word (localhost,
+                // myhost) is deliberately left to the dotted matchers to avoid
+                // noise.
+                let obfuscatedIP = h.allSatisfy(\.isNumber) || h.lowercased().hasPrefix("0x")
+                if isIPv6 || h.contains(".") || obfuscatedIP { hosts.insert(h) }
             }
         }
     }

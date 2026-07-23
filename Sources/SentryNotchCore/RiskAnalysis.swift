@@ -100,7 +100,12 @@ private func bashRisks(_ cmd: String) -> [(RiskLevel, String)] {
     if isRecursiveForceDelete(cmd) {
         out.append((.high, "recursive force delete (rm -rf)"))
     }
-    if has(#"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh|python3?)\b"#) {
+    // A download feeding an interpreter anywhere downstream — `curl x | sh`,
+    // `curl x | perl`, and interposed forms like `curl x | tac | sh`. The old
+    // pattern required the interpreter *immediately* after the pipe and only
+    // knew four of them, so `| perl`, `| node`, and any intermediate stage slid
+    // past untouched.
+    if has(#"\b(curl|wget|fetch)\b[\s\S]*\|\s*(sudo\s+)?(sh|bash|zsh|dash|ksh|fish|python3?|perl|ruby|node|php)\b"#) {
         out.append((.high, "pipes a download straight into a shell"))
     }
     if lower.contains("sudo ") {
