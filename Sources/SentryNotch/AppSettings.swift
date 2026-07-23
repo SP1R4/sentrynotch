@@ -46,6 +46,8 @@ struct WidgetSpec: Identifiable {
         .init(id: "spotify",    name: "Now playing",       detail: "Now-playing and transport for Spotify or Apple Music",  defaultOn: true),
         .init(id: "headroom",   name: "Rate-limit headroom", detail: "Live context tokens and time until the 5h/7d windows reset", defaultOn: true),
         .init(id: "repo",       name: "Repo state",        detail: "Branch and uncommitted-file count for each working session", defaultOn: true),
+        .init(id: "vitals",     name: "Agent vitals",      detail: "Context-fill gauge, burn rate, ETA to the ceiling, and a tempo heartbeat", defaultOn: true),
+        .init(id: "fleet",      name: "Fleet board",       detail: "Every session as a status dot — working, waiting on you, or high-risk", defaultOn: true),
     ]
 }
 

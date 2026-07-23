@@ -61,9 +61,13 @@ final class NotchController: NSObject {
     private let flank: CGFloat = 46
     private var collapsedSize: NSSize {
         if let n = notch {
-            // Mascot wedges appear only while a session is working, so the
-            // notch grows out to hold them then and shrinks back when idle.
-            let extra = (model.hasActiveSession && model.settings.mascotEnabled) ? flank * 2 : 0
+            // The notch grows side flanks to hold the working-session mascots
+            // and/or the now-playing mark, and shrinks back when neither is
+            // present. It always grows on both sides to stay centred under the
+            // hardware notch, even when only one side has content.
+            let mascot = model.hasActiveSession && model.settings.mascotEnabled
+            let music = model.settings.widgetOn("spotify") && model.music.available
+            let extra = (mascot || music) ? flank * 2 : 0
             return NSSize(width: n.width + extra, height: n.height + 11)
         }
         return NSSize(width: 170, height: 34)
@@ -147,6 +151,13 @@ final class NotchController: NSObject {
         // Grow/shrink the collapsed notch as sessions start/stop working.
         model.$sessions
             .map { $0.contains { $0.isActive } }
+            .removeDuplicates()
+            .sink { [weak self] _ in self?.repositionCollapsed() }
+            .store(in: &cancellables)
+
+        // …and as music playback starts/stops, so the now-playing mark can grow
+        // its own flank without a session working.
+        model.music.$available
             .removeDuplicates()
             .sink { [weak self] _ in self?.repositionCollapsed() }
             .store(in: &cancellables)

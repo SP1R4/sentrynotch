@@ -310,6 +310,11 @@ final class AppModel: ObservableObject {
     }
     private var blastCache: [UUID: BlastRadius] = [:]
 
+    /// Rolling context-size samples (one per tick, ~2-minute window) for the
+    /// agent-vitals widget — burn rate and the tempo heartbeat, derived from
+    /// data already gathered, so no extra polling.
+    private var vitalsSamples: [(t: Date, total: Int, peak: Int)] = []
+
     /// Peak context tokens per day, summed across that day's sessions.
     func tokenTrend() -> [Tally] { TokenLog.dailyTotals(tokenTable) }
 
@@ -325,6 +330,48 @@ final class AppModel: ObservableObject {
             }
         }
         if changed { tokenLog.save(tokenTable) }
+    }
+
+    // MARK: - Agent vitals
+
+    static let contextCeiling = 200_000
+
+    /// One context-size sample per tick, capped to a two-minute window.
+    func sampleVitals() {
+        vitalsSamples.append((Date(), liveTokens, contextPeak))
+        if vitalsSamples.count > 120 { vitalsSamples.removeFirst(vitalsSamples.count - 120) }
+    }
+
+    /// The busiest single session — the one nearest its context ceiling.
+    var contextPeak: Int { sessions.map(\.tokens).max() ?? 0 }
+
+    /// Context growth per minute, from the sum of recent per-tick *growth* over
+    /// a short trailing window. Compaction drops are already clamped out of the
+    /// pulses, and the short window means a one-off jump when a session first
+    /// loads decays in ~30s instead of inflating the rate for two minutes.
+    var contextBurnPerMin: Int {
+        let recent = vitalsPulses.suffix(30)
+        guard !recent.isEmpty else { return 0 }
+        return Int(Double(recent.reduce(0, +)) / Double(recent.count) * 60)
+    }
+
+    /// Minutes until the busiest session hits the ceiling at its recent rate;
+    /// nil when nothing is growing or it's already past the ceiling (a session
+    /// can carry more than one window's worth once it has compacted).
+    var contextETAMinutes: Int? {
+        let recent = vitalsSamples.suffix(30)
+        guard let a = recent.first, let b = recent.last,
+              b.t.timeIntervalSince(a.t) > 1, b.peak > a.peak,
+              b.peak < AppModel.contextCeiling else { return nil }
+        let rate = Double(b.peak - a.peak) / (b.t.timeIntervalSince(a.t) / 60)
+        guard rate > 0 else { return nil }
+        return max(0, Int(Double(AppModel.contextCeiling - b.peak) / rate))
+    }
+
+    /// Per-tick tempo pulses (non-negative context deltas) for the heartbeat.
+    var vitalsPulses: [Int] {
+        guard vitalsSamples.count > 1 else { return [] }
+        return zip(vitalsSamples.dropFirst(), vitalsSamples).map { max(0, $0.total - $1.total) }
     }
 
     // MARK: - Derived
@@ -649,6 +696,7 @@ final class AppModel: ObservableObject {
         // Reconcile so a dashboard toggle takes effect either way.
         reconcileSpotify()
         if !monitorCards.isEmpty { applySessions(monitorCards, force: tickCount % 10 == 0) }
+        sampleVitals()
         if tickCount % 60 == 0 { sampleTokens() }
         if tickCount % 20 == 0 {
             refreshSuggestions()

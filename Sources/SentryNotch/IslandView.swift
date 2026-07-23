@@ -54,7 +54,7 @@ struct IslandView: View {
             if state.expanded {
                 expanded.transition(.opacity.combined(with: .move(edge: .top)))
             } else {
-                CollapsedPill(model: model, state: state, onTap: onToggle)
+                CollapsedPill(model: model, state: state, music: model.music, onTap: onToggle)
             }
             Spacer(minLength: 0)
         }
@@ -271,6 +271,25 @@ private struct WidgetRow: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
+            // Agent-vitals row: the run's own instrumentation — how fast it's
+            // filling context, and which sessions need you.
+            if on("vitals") || on("fleet") {
+                HStack(alignment: .top, spacing: 8) {
+                    if on("vitals") {
+                        VitalsWidget(model: model, accent: accent)
+                            .padding(.horizontal, 11).padding(.vertical, 9)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .elevated(radius: 12, strength: 0.7)
+                    }
+                    if on("fleet") {
+                        FleetWidget(model: model, accent: accent)
+                            .padding(.horizontal, 11).padding(.vertical, 9)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .elevated(radius: 12, strength: 0.7)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
@@ -296,6 +315,9 @@ private struct EmptyState: View {
 private struct CollapsedPill: View {
     @ObservedObject var model: AppModel
     @ObservedObject var state: NotchState
+    // Observed directly so the music wedge shows/hides and re-dims the instant
+    // playback state changes, not a tick later.
+    @ObservedObject var music: NowPlayingController
     var onTap: () -> Void
 
     private var dotColor: Color {
@@ -362,14 +384,17 @@ private struct CollapsedPill: View {
 
     private var showMascot: Bool { model.hasActiveSession && model.settings.mascotEnabled }
 
-    /// The right wedge shows a music visualiser when Spotify has a track loaded.
-    /// Only claimed when the wedges are on screen at all — it rides in the space
-    /// the mascots opened up rather than widening the notch on its own.
+    /// The right wedge shows the music source's mark whenever a track is loaded —
+    /// on its own now, so it appears even with no session working (the notch
+    /// grows a flank for it in `NotchController.collapsedSize`).
     private var showMusic: Bool {
-        showMascot
-            && model.settings.widgetOn("spotify")
-            && model.music.available
+        model.settings.widgetOn("spotify") && music.available
     }
+
+    /// Whether the notch is wearing side flanks at all — for either the mascots
+    /// or the music mark. Drives the empty spacers that keep it centred under the
+    /// hardware notch when only one side has content.
+    private var wantsFlanks: Bool { showMascot || showMusic }
 
     var body: some View {
         if state.notchHeight > 0 {
@@ -391,16 +416,24 @@ private struct CollapsedPill: View {
             let leftRiders = mirror ? crew : Array(crew.prefix(split.left))
             let rightRiders = mirror ? crew : Array(crew.dropFirst(split.left).prefix(split.right))
             HStack(spacing: 0) {
+                // Left wedge: mascots, or an empty spacer that keeps the band
+                // centred when only the right side (music) has content.
                 if showMascot {
                     FlankMascot(state: state, riders: leftRiders, slots: slots)
+                } else if wantsFlanks {
+                    Color.clear.frame(width: state.flankWidth)
                 }
                 centerLip.frame(width: state.notchWidth)
+                // Right wedge: music wins it, else mascots, else an empty spacer.
                 if showMusic {
-                    FlankMusic(state: state, playing: model.music.playing,
+                    FlankMusic(state: state, source: music.source,
+                               playing: music.playing,
                                color: model.settings.accentColor)
                 } else if showMascot {
                     FlankMascot(state: state, riders: rightRiders,
                                 overflow: split.overflow, slots: slots)
+                } else if wantsFlanks {
+                    Color.clear.frame(width: state.flankWidth)
                 }
             }
             .background(CC.inkTop)
@@ -469,23 +502,106 @@ private struct FlankMascot: View {
     }
 }
 
-/// Music visualiser on the right wedge, sized like the mascots beside it.
+/// The current music source's mark on the right wedge, sized like the mascots
+/// beside it. Replaces the animated equalizer bars with a static brand mark,
+/// which reads more clearly at wedge size and doesn't compete with the walking
+/// sprites on the left. Dimmed while paused.
 private struct FlankMusic: View {
     @ObservedObject var state: NotchState
+    var source: MusicSource
     var playing: Bool
     var color: Color
+    @Environment(\.animationsEnabled) private var animationsEnabled
 
-    private var barSize: CGFloat {
-        min(state.flankWidth - 12, state.notchHeight - 8)
-    }
+    private var markSize: CGFloat { min(state.flankWidth - 10, state.notchHeight - 6) }
 
     var body: some View {
         VStack(spacing: 0) {
-            AudioBars(size: barSize, color: color, playing: playing)
+            dancing(mark)
                 .frame(width: state.flankWidth, height: state.notchHeight)
+                .opacity(playing ? 1 : 0.5)
             Spacer(minLength: 0)
         }
         .frame(width: state.flankWidth)
+    }
+
+    /// Bobs, sways, and pulses the mark to the beat while a track plays — a
+    /// double-time bounce with a slower sway, so it grooves rather than jitters.
+    /// Held still when paused or when Reduce Motion is on.
+    @ViewBuilder private func dancing(_ v: some View) -> some View {
+        if playing && animationsEnabled {
+            // 30fps periodic, not `.animation`: the rest of the notch caps its
+            // frame rate this way on purpose (see DesignSystem) — a display-
+            // linked schedule would rebuild this shadowed gradient at 120Hz.
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { tl in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                v.scaleEffect(1 + 0.045 * sin(t * 6.6))
+                    .rotationEffect(.degrees(9 * sin(t * 3.3)))
+                    .offset(y: 1.4 * sin(t * 6.6))
+            }
+        } else {
+            v
+        }
+    }
+
+    @ViewBuilder private var mark: some View {
+        switch source {
+        case .spotify:
+            SpotifyMark(size: markSize)
+        case .appleMusic:
+            Image(systemName: "music.note").font(.system(size: markSize * 0.62, weight: .bold))
+                .foregroundStyle(color)
+        case .youtube:
+            Image(systemName: "play.rectangle.fill").font(.system(size: markSize * 0.6))
+                .foregroundStyle(color)
+        }
+    }
+}
+
+/// The Spotify mark — the three sound-wave arcs on the green disc — drawn rather
+/// than bundled as the trademarked asset: recognisable at wedge size, with no
+/// image file to ship. Brand colour is used here deliberately, at the app
+/// owner's request (it reverses the card's "no service brand colour" rule).
+struct SpotifyMark: View {
+    var size: CGFloat
+    private let brand = Color(red: 0.114, green: 0.725, blue: 0.329)
+
+    var body: some View {
+        ZStack {
+            // Cinematic disc: a lit gradient with a top-left gloss and a faint
+            // rim, so the mark reads as a polished button rather than a flat
+            // sticker on the black notch.
+            Circle()
+                .fill(LinearGradient(colors: [Color(red: 0.118, green: 0.843, blue: 0.376),
+                                              Color(red: 0.086, green: 0.596, blue: 0.271)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(Circle().fill(RadialGradient(colors: [.white.opacity(0.22), .clear],
+                                                      center: .init(x: 0.32, y: 0.24),
+                                                      startRadius: 0, endRadius: size * 0.6)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.10), lineWidth: max(0.5, size * 0.015)))
+            GeometryReader { geo in
+                let s = geo.size
+                let lw = max(1, s.width * 0.12)
+                ForEach(0..<3, id: \.self) { i in
+                    wave(i, in: s).stroke(.black, style: StrokeStyle(lineWidth: lw, lineCap: .round))
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .shadow(color: brand.opacity(0.6), radius: size * 0.14, y: size * 0.03)
+    }
+
+    // The three sound-waves as concentric circular arcs sharing a centre just
+    // below the disc — wide and shallow like the real mark, top arc largest.
+    private func wave(_ i: Int, in s: CGSize) -> Path {
+        let radii: [CGFloat] = [0.68, 0.52, 0.36]
+        let center = CGPoint(x: s.width * 0.5, y: s.height * 1.05)
+        let theta = Angle.degrees(33)
+        var p = Path()
+        p.addArc(center: center, radius: radii[i] * s.height,
+                 startAngle: .degrees(270) - theta, endAngle: .degrees(270) + theta,
+                 clockwise: false)
+        return p
     }
 }
 

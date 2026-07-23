@@ -422,58 +422,6 @@ func highlightShell(_ s: String) -> AttributedString {
     return attr
 }
 
-/// Audio-level bars for the notch wedge while music is playing.
-///
-/// Decorative, not an analyser: macOS gives no per-app amplitude without
-/// capturing system audio, which is a permission and a privacy cost this does
-/// not warrant. The bars are driven by summed sines at incommensurate rates, so
-/// the pattern never visibly repeats and reads as sound without pretending to
-/// measure it.
-struct AudioBars: View {
-    var size: CGFloat = 20
-    var color: Color = CC.coral
-    var playing: Bool = true
-
-    @Environment(\.animationsEnabled) private var animationsEnabled
-
-    private static let bars = 4
-    /// Deliberately non-integer ratios: any common factor makes the bars fall
-    /// into visible lockstep.
-    private static let rates: [Double] = [5.3, 7.1, 4.2, 6.4]
-
-    var body: some View {
-        if playing && animationsEnabled {
-            TimelineView(.periodic(from: .now, by: 0.11)) { tl in
-                shape(at: tl.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            // Paused: bars rest low rather than vanishing, so the widget still
-            // reads as "music, currently stopped".
-            shape(at: nil)
-        }
-    }
-
-    private func shape(at t: TimeInterval?) -> some View {
-        let w = size / CGFloat(Self.bars * 2 - 1)
-        return HStack(alignment: .bottom, spacing: w) {
-            ForEach(0..<Self.bars, id: \.self) { i in
-                Capsule()
-                    .fill(color)
-                    .frame(width: w, height: height(i, t))
-            }
-        }
-        .frame(width: size, height: size, alignment: .bottom)
-    }
-
-    private func height(_ i: Int, _ t: TimeInterval?) -> CGFloat {
-        guard let t else { return size * 0.16 }
-        let a = sin(t * Self.rates[i])
-        let b = sin(t * Self.rates[(i + 2) % Self.bars] * 0.6)
-        let level = (a + b * 0.5) / 1.5                      // −1…1
-        return size * (0.18 + 0.62 * CGFloat((level + 1) / 2))
-    }
-}
-
 /// A switch drawn from scratch, for state that must stay readable at a glance.
 ///
 /// AppKit desaturates a stock `Toggle`'s tint whenever its window isn't key,
