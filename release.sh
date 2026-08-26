@@ -117,6 +117,9 @@ echo "==> Stapling the ticket"
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 
+echo "==> Updating the Homebrew cask"
+VERSION="$VERSION" ./tools/update-cask.sh || echo "note: cask update skipped"
+
 echo
 echo "Ready to ship: $DMG"
 echo "Verify on a clean Mac before announcing:"

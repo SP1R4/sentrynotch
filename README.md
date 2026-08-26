@@ -76,7 +76,13 @@ questions that actually matter when you're writing up what an agent did.
 
 ## Install
 
-**Download** the latest `.dmg` from the [Releases page](../../releases/latest) and drag
+**Homebrew** (once a signed release is published to the tap):
+
+```bash
+brew install --cask SP1R4/tap/sentry-notch
+```
+
+Or **download** the latest `.dmg` from the [Releases page](../../releases/latest) and drag
 **Sentry Notch** into Applications. On first run it walks you through enabling the Claude Code hook.
 
 The build is **unsigned** — there's no paid Apple Developer certificate behind a free, open-source
