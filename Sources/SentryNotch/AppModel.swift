@@ -42,6 +42,10 @@ enum SecurityPosture: String, CaseIterable, Identifiable {
 final class AppModel: ObservableObject {
     @Published var sessions: [SessionCard] = []
     @Published var pending: [PermissionRequest] = []
+    /// Time-boxed auto-approvals. Deliberately in-memory only: a trust window is
+    /// a "for the next few minutes" convenience, so it should never survive a
+    /// restart. Expired windows are swept in `tick()`.
+    @Published var trustWindows: [TrustWindow] = []
     @Published var bypassedSessions: Set<String> = []
     @Published var expandedSessionID: String? = nil
     @Published var activity: [ActivityItem] = []
@@ -472,6 +476,10 @@ final class AppModel: ObservableObject {
         }
 
         if !forcePrompt, breach.isEmpty {
+            if let tw = trustWindows.first(where: { $0.covers(cwd: req.cwd, tool: req.toolName, now: Date()) }) {
+                finish(req, "allow", "Trust window: \(tw.tier == .all ? "all tools" : "reads") · \(tw.label)", auto: true)
+                return
+            }
             if bypassedSessions.contains(req.sessionID) {
                 finish(req, "allow", "Session bypassed via Sentry Notch", auto: true); return
             }
@@ -706,6 +714,22 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Trust windows
+
+    /// Start (or replace) a time-boxed auto-approval for a project. `cwd` empty
+    /// means every project. Replaces any existing window with the same scope so
+    /// re-granting extends rather than stacks.
+    func grantTrust(cwd: String, tier: TrustWindow.Tier, minutes: Int) {
+        let label = cwd.isEmpty ? "all projects" : (cwd as NSString).lastPathComponent
+        let window = TrustWindow(cwd: cwd, tier: tier,
+                                 expiresAt: Date().addingTimeInterval(Double(minutes) * 60),
+                                 label: label.isEmpty ? "session" : label)
+        trustWindows.removeAll { $0.cwd == cwd && $0.tier == tier }
+        trustWindows.append(window)
+    }
+
+    func revokeTrust(_ id: UUID) { trustWindows.removeAll { $0.id == id } }
+
     func injectDemoPrompt() {
         let req = PermissionRequest(
             demoToolName: "Bash",
@@ -770,6 +794,10 @@ final class AppModel: ObservableObject {
         }
         pending.removeAll { now >= $0.deadline }
         scopeCache = scopeCache.filter { id, _ in pending.contains { $0.id == id } }
+        // Expire trust windows the moment their clock runs out.
+        if trustWindows.contains(where: { !$0.active(now: now) }) {
+            trustWindows.removeAll { !$0.active(now: now) }
+        }
         // Reconcile so a dashboard toggle takes effect either way.
         reconcileSpotify()
         if !monitorCards.isEmpty { applySessions(monitorCards, force: tickCount % 10 == 0) }

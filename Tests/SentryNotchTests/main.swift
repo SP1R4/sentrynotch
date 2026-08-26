@@ -1193,5 +1193,19 @@ let dec = AlertEvent(event: "decision", tool: "Bash", project: "p", risk: "dange
     outOfScope: [], summary: "rm -rf /", decision: "deny", ts: "t")
 check(dec.message.hasPrefix("DENY"), "a decision event leads with the decision")
 
+// MARK: Trust windows
+let future = Date().addingTimeInterval(300)
+let past = Date().addingTimeInterval(-1)
+let now = Date()
+let roWin = TrustWindow(cwd: "/p/acme", tier: .readOnly, expiresAt: future, label: "acme")
+check(roWin.covers(cwd: "/p/acme", tool: "Read", now: now), "read-only window covers a Read")
+check(!roWin.covers(cwd: "/p/acme", tool: "Bash", now: now), "read-only window does not cover Bash")
+check(!roWin.covers(cwd: "/p/other", tool: "Read", now: now), "window is scoped to its project")
+check(!TrustWindow(cwd: "/p/acme", tier: .readOnly, expiresAt: past, label: "acme")
+        .covers(cwd: "/p/acme", tool: "Read", now: now), "an expired window covers nothing")
+let allWin = TrustWindow(cwd: "", tier: .all, expiresAt: future, label: "all")
+check(allWin.covers(cwd: "/anywhere", tool: "Bash", now: now), "an all-projects all-tools window covers Bash anywhere")
+check(roWin.remaining(now: now) > 290 && roWin.remaining(now: now) <= 300, "remaining counts down from the window length")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

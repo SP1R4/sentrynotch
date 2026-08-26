@@ -83,6 +83,7 @@ struct IslandView: View {
                 ScrollView {
                     VStack(spacing: 8) {
                         WidgetRow(model: model, state: state)
+                        if !model.trustWindows.isEmpty { TrustStrip(model: model) }
                         if model.pending.count > 1 && model.settings.widgetOn("approveSafe") {
                             Button(action: model.approveAllSafe) {
                                 Label("Approve all safe (\(model.pending.filter { $0.risk.level == .none }.count))",
@@ -903,6 +904,7 @@ private struct PermissionCard: View {
                 PillButton(title: "Always", key: "⌘3", style: .plain) { model.alwaysAllow(req, source: "Always button") }
                 PillButton(title: "Bypass", key: "⌘4", style: .danger) { model.bypass(req) }
             }
+            trustRow
         }
         .padding(13)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(CC.surface))
@@ -912,6 +914,27 @@ private struct PermissionCard: View {
     private var borderColor: Color {
         req.risk.level >= .high ? Color.red.opacity(0.55)
             : req.risk.level >= .medium ? Color.orange.opacity(0.45) : CC.coral.opacity(0.45)
+    }
+
+    /// Time-boxed trust: approve the routine stuff for a few minutes without a
+    /// permanent grant. Read-only is the safe default; "all" is offered too but
+    /// visually quieter.
+    private var trustRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "clock.badge.checkmark").font(.system(size: 9)).foregroundStyle(CC.textFaint)
+            Text("Trust here:").font(.system(size: 10)).foregroundStyle(CC.textFaint)
+            Button("reads 5m") { model.grantTrust(cwd: req.cwd, tier: .readOnly, minutes: 5) }
+                .buttonStyle(.plain).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CC.coral)
+            Text("·").foregroundStyle(CC.textFaint)
+            Button("reads 15m") { model.grantTrust(cwd: req.cwd, tier: .readOnly, minutes: 15) }
+                .buttonStyle(.plain).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(CC.coral)
+            Text("·").foregroundStyle(CC.textFaint)
+            Button("all 5m") { model.grantTrust(cwd: req.cwd, tier: .all, minutes: 5) }
+                .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(CC.textDim)
+            Spacer()
+        }
     }
 
     private var header: some View {
@@ -968,6 +991,37 @@ private struct RiskBanner: View {
         }
     }
     private var tint: Color { risk.level >= .high ? .red : .orange }
+}
+
+/// Active time-boxed trust windows, with a live countdown and one-tap revoke.
+private struct TrustStrip: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(model.trustWindows) { tw in
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    let secs = Int(tw.remaining(now: ctx.date))
+                    HStack(spacing: 7) {
+                        Image(systemName: "clock.badge.checkmark").font(.system(size: 11))
+                            .foregroundStyle(model.settings.accentColor)
+                        Text("Trusting \(tw.tier == .all ? "all tools" : "reads") in \(tw.label)")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(CC.text)
+                        Spacer()
+                        Text(String(format: "%d:%02d", secs / 60, secs % 60))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(CC.textDim)
+                        Button { model.revokeTrust(tw.id) } label: {
+                            Image(systemName: "xmark.circle.fill").font(.system(size: 12))
+                                .foregroundStyle(CC.textFaint)
+                        }.buttonStyle(.plain).help("Revoke now")
+                    }
+                    .padding(.horizontal, 9).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 9)
+                        .fill(model.settings.accentColor.opacity(0.12)))
+                }
+            }
+        }
+    }
 }
 
 /// Read-only "what this will actually do" preview — rm expansion counts and
