@@ -173,8 +173,35 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Per-project behavioral fingerprints, for first-seen anomaly cues on the
+    /// prompt card. Built once from history, updated as decisions are recorded.
+    private var profiles: [String: AgentProfile] = [:]
+
+    private func loadProfiles() {
+        let log = audit
+        Task { @MainActor in
+            let rows = await Task.detached(priority: .utility) { log.rows(limit: 20_000) }.value
+            var built: [String: AgentProfile] = [:]
+            for r in rows where !r.project.isEmpty {
+                built[r.project, default: AgentProfile()].add(tool: r.tool, key: r.key)
+            }
+            // The history read is authoritative for the baseline; a handful of
+            // calls that landed mid-load are re-folded in on their next record.
+            profiles = built
+        }
+    }
+
+    /// First-seen anomaly flags for a call, versus its project's baseline.
+    func novelty(for req: PermissionRequest) -> [String] {
+        let project = (req.cwd as NSString).lastPathComponent
+        guard let profile = profiles[project] else { return [] }
+        return noveltyFlags(profile: profile, tool: req.toolName,
+                            key: ruleKey(toolName: req.toolName, input: req.toolInput))
+    }
+
     func start() {
         ipc.start()
+        loadProfiles()
         monitor.start()
         notifications.start()
         updates.start()
@@ -886,6 +913,12 @@ final class AppModel: ObservableObject {
                          sessionID: req.sessionID, cwd: req.cwd,
                          riskLevel: req.risk.level.label,
                          key: ruleKey(toolName: req.toolName, input: req.toolInput))
+            // Fold this call into the project's behavioral baseline.
+            let project = (req.cwd as NSString).lastPathComponent
+            if !project.isEmpty {
+                profiles[project, default: AgentProfile()]
+                    .add(tool: req.toolName, key: ruleKey(toolName: req.toolName, input: req.toolInput))
+            }
         }
         notifications.withdraw(id: req.id)
         pending.removeAll { $0.id == req.id }

@@ -1295,5 +1295,22 @@ check(steerReasons(for: ["runs with sudo", "recursive force delete (rm -rf)"], o
 check(Set(steerReasons(for: ["sudo", "sudo"], outOfScope: false)).count == steerReasons(for: ["sudo", "sudo"], outOfScope: false).count,
       "steer reasons are de-duplicated")
 
+// MARK: Agent profile / anomaly
+var prof = AgentProfile()
+for _ in 0..<15 { prof.add(tool: "Read", key: "Read") }
+prof.add(tool: "Bash", key: "Bash|git")
+check(prof.count == 16 && prof.tools.contains("Read") && prof.commandHeads.contains("git"),
+      "profile records tools and command heads")
+check(noveltyFlags(profile: prof, tool: "Bash", key: "Bash|nc").contains { $0.contains("nc") },
+      "a never-seen command is flagged novel")
+check(noveltyFlags(profile: prof, tool: "WebFetch", key: "WebFetch").contains { $0.contains("WebFetch") },
+      "a never-seen tool is flagged novel")
+check(noveltyFlags(profile: prof, tool: "Bash", key: "Bash|git").isEmpty,
+      "a familiar command is not flagged")
+var young = AgentProfile()
+young.add(tool: "Read", key: "Read")
+check(noveltyFlags(profile: young, tool: "Bash", key: "Bash|nc").isEmpty,
+      "with too little history, nothing is flagged (no baseline)")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

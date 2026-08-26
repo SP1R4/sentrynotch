@@ -923,6 +923,7 @@ private struct PermissionCard: View {
             Text("Claude wants to run \(req.toolName)")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(CC.text)
             RiskBanner(risk: req.risk)
+            NoveltyBanner(flags: model.novelty(for: req))
             ScopeBanner(hosts: model.scopeFlags(req))
             BlastBanner(radius: model.blast(req))
             DetailView(detail: req.detail)
@@ -1106,6 +1107,23 @@ private struct PreflightBanner: View {
         case .danger: return "exclamationmark.octagon.fill"
         case .caution: return "exclamationmark.triangle.fill"
         case .info: return "info.circle"
+        }
+    }
+}
+
+/// First-seen anomaly cues — behavior this project's agent hasn't shown before.
+private struct NoveltyBanner: View {
+    let flags: [String]
+    var body: some View {
+        if !flags.isEmpty {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "sparkle.magnifyingglass").font(.system(size: 11))
+                Text(flags.joined(separator: " · "))
+                    .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Color(red: 0.66, green: 0.52, blue: 0.92)).padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color(red: 0.66, green: 0.52, blue: 0.92).opacity(0.14)))
         }
     }
 }
