@@ -136,7 +136,10 @@ struct IslandView: View {
         }
         .background {
             ZStack {
-                CC.panel
+                // The themed base is used only while expanded; collapsed stays
+                // the flat warm-black `CC.panel` so a light custom colour can't
+                // stop the ~43pt bar from merging with the physical notch.
+                (state.expanded ? model.settings.notchPanel : CC.panel)
                 // Ambient wash pulled from the current cover, in front of the
                 // panel fill but behind all content so text stays legible.
                 if state.expanded {

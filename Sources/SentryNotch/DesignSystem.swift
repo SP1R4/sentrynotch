@@ -1,4 +1,28 @@
 import SwiftUI
+import AppKit
+
+/// sRGB hex ↔ Color, for the user-customisable notch background. Six-digit
+/// `RRGGBB`, with or without a leading `#`.
+extension Color {
+    init?(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt32(s, radix: 16) else { return nil }
+        self = Color(red: Double((v >> 16) & 0xFF) / 255,
+                     green: Double((v >> 8) & 0xFF) / 255,
+                     blue: Double(v & 0xFF) / 255)
+    }
+
+    /// Uppercase `RRGGBB` (no `#`). Falls back to black if the colour can't be
+    /// resolved into sRGB.
+    var hexString: String {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? .black
+        let r = Int((ns.redComponent * 255).rounded())
+        let g = Int((ns.greenComponent * 255).rounded())
+        let b = Int((ns.blueComponent * 255).rounded())
+        return String(format: "%02X%02X%02X", r, g, b)
+    }
+}
 
 /// Whether continuously-animating views should actually animate.
 ///

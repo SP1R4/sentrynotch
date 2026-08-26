@@ -229,6 +229,36 @@ struct DashboardView: View {
             }
             .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
 
+            caption("NOTCH BACKGROUND")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    ForEach(NotchBackground.allCases) { bg in
+                        let swatch = bg.presetColor ?? (Color(hex: settings.notchBackgroundHex) ?? CC.ink)
+                        Circle().fill(swatch).frame(width: 28, height: 28)
+                            .overlay(Circle().stroke(CC.hairline, lineWidth: 1))
+                            .overlay(Circle().stroke(CC.text,
+                                     lineWidth: settings.notchBackground == bg ? 2.5 : 0))
+                            .overlay(bg == .custom
+                                     ? Image(systemName: "eyedropper").font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(CC.text) : nil)
+                            .contentShape(Circle())
+                            .onTapGesture { settings.notchBackground = bg }
+                            .help(bg.name)
+                    }
+                    Spacer()
+                }
+                if settings.notchBackground == .custom {
+                    ColorPicker("Custom colour", selection: Binding(
+                        get: { Color(hex: settings.notchBackgroundHex) ?? CC.ink },
+                        set: { settings.notchBackgroundHex = $0.hexString }))
+                        .font(.system(size: 12)).foregroundStyle(CC.textDim)
+                }
+                Text("The top edge always stays near-black so the collapsed bar keeps blending into the physical notch.")
+                    .font(.system(size: 10)).foregroundStyle(CC.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+
             caption("MASCOT")
             toggleRow("Show the notch mascot", "Rides the wedges while a session is working", $settings.mascotEnabled)
             toggleRow("Tint per project", "Colour the mascot by project instead of the accent", $settings.mascotUsesProjectColor)
