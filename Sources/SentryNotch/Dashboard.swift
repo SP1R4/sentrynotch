@@ -58,6 +58,7 @@ struct DashboardView: View {
         ?? .activity
     @State private var stats = AnalyticsSummary()
     @State private var tokens: [Tally] = []
+    @State private var policySuggestions: [PolicySuggestion] = []
     @State private var integrity: AuditVerification?
     @State private var integrityLegacy = 0
     @State private var verifying = false
@@ -106,6 +107,11 @@ struct DashboardView: View {
             Task {
                 let v = await model.ruleUsageReportAsync(rules: keys)
                 if gen == generation { rules = v }
+            }
+        case .policy:
+            Task {
+                let v = await model.policySuggestionsAsync(existing: settings.policyRules)
+                if gen == generation { policySuggestions = v }
             }
         case .scope:
             // Small file, read synchronously; and re-read on every open so an
@@ -221,7 +227,40 @@ struct DashboardView: View {
 
     // MARK: - Policy
 
-    private var policyTab: some View { PolicyEditor(settings: settings) }
+    private var policyTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !policySuggestions.isEmpty {
+                caption("SUGGESTED FROM YOUR HISTORY")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Patterns you've consistently denied — one tap promotes them to a rule.")
+                        .font(.system(size: 11)).foregroundStyle(CC.textDim)
+                    ForEach(policySuggestions) { s in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(s.rule.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(CC.text)
+                                Text(s.rationale).font(.system(size: 10)).foregroundStyle(CC.textDim)
+                            }
+                            Spacer()
+                            Button {
+                                settings.policyRules.append(s.rule)
+                                policySuggestions.removeAll { $0.id == s.id }
+                            } label: {
+                                Label("Add", systemImage: "plus").font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(Capsule().fill(settings.accentColor))
+                            }.buttonStyle(.plain)
+                            Button { policySuggestions.removeAll { $0.id == s.id } } label: {
+                                Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(CC.textFaint)
+                            }.buttonStyle(.plain)
+                        }
+                        .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+                    }
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+            }
+            PolicyEditor(settings: settings)
+        }
+    }
 
     // MARK: - Appearance
 

@@ -290,6 +290,14 @@ final class AppModel: ObservableObject {
     /// The current chain head, for anchoring the log off-box.
     func auditHeadMAC() -> String { audit.headMAC() }
 
+    /// Deny rules the decision log suggests, computed off the main thread.
+    nonisolated func policySuggestionsAsync(existing: [PolicyRule]) async -> [PolicySuggestion] {
+        let log = audit
+        return await Task.detached(priority: .utility) {
+            suggestPolicyRules(rows: log.rows(limit: 20_000), existing: existing)
+        }.value
+    }
+
     /// Standing rules the decision log suggests. Recomputed sparingly: it reads
     /// the whole log, and view code touches it on every prompt render.
     @Published private(set) var suggestions: [RuleSuggestion] = []

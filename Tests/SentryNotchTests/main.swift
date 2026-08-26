@@ -1232,5 +1232,23 @@ check(trippedHoneytokens(command: nil, paths: ["/Users/u/proj/config/.env.prod"]
       "a path suffix match trips the decoy")
 check(starterHoneytokenFiles().count == 3, "starter bait set is present")
 
+// MARK: Learned policy suggestions
+func row(_ decision: String, _ tool: String, _ key: String) -> DecisionRow {
+    DecisionRow(decision: decision, tool: tool, project: "p", risk: "", day: "2026-01-01", key: key)
+}
+var histo: [DecisionRow] = []
+for _ in 0..<5 { histo.append(row("deny", "Bash", "Bash|psql")) }   // consistently denied
+for _ in 0..<4 { histo.append(row("allow", "Read", "Read")) }        // consistently allowed
+histo.append(row("allow", "Bash", "Bash|psql"))                      // one allow → 5/6 denied
+let sugg = suggestPolicyRules(rows: histo, existing: [])
+check(sugg.contains { $0.rule.name == "Deny psql" }, "a consistently-denied command is suggested as a deny rule")
+check(!sugg.contains { $0.rule.name == "Deny Read" }, "a consistently-allowed tool is not suggested")
+check(sugg.first { $0.id == "Bash|psql" }?.rule.commandRegex != nil, "a Bash suggestion carries a command regex")
+check(suggestPolicyRules(rows: histo, existing: [PolicyRule(name: "Deny psql", effect: .deny)]).isEmpty
+      || !suggestPolicyRules(rows: histo, existing: [PolicyRule(name: "Deny psql", effect: .deny)]).contains { $0.rule.name == "Deny psql" },
+      "an already-existing rule is not re-suggested")
+check(suggestPolicyRules(rows: Array(histo.prefix(2)), existing: []).isEmpty,
+      "below the threshold, nothing is suggested")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
