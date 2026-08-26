@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="1200" height="380" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-label="Sentry Notch — a permission checkpoint for coding agents, living in your Mac's notch">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#0A0A0B"/>
+      <stop offset="1" stop-color="#151417"/>
+    </linearGradient>
+    <linearGradient id="coralFade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#D97757" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#D97757" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#D97757" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="shieldGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#D97757" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#D97757" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="softer" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+
+  <!-- panel -->
+  <rect x="1" y="1" width="1198" height="378" rx="22" fill="url(#bg)"/>
+  <rect x="1.5" y="1.5" width="1197" height="377" rx="21.5" fill="none" stroke="#FFFAF5" stroke-opacity="0.09"/>
+
+  <!-- sweeping scan line -->
+  <g opacity="0.5">
+    <rect x="18" y="0" width="1164" height="2" fill="url(#coralFade)" filter="url(#soft)">
+      <animate attributeName="y" values="24;356;24" dur="5.5s" repeatCount="indefinite" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.4 0 0.2 1;0.4 0 0.2 1"/>
+    </rect>
+  </g>
+
+  <!-- the notch -->
+  <path d="M525 0 L525 12 Q525 26 539 26 L661 26 Q675 26 675 12 L675 0 Z" fill="#000000"/>
+  <circle cx="600" cy="13" r="3.2" fill="#D97757">
+    <animate attributeName="opacity" values="0.35;1;0.35" dur="2.4s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- left: shield emblem with radar rings -->
+  <g transform="translate(205 195)">
+    <ellipse cx="0" cy="0" rx="120" ry="120" fill="url(#shieldGlow)" filter="url(#softer)"/>
+    <g fill="none" stroke="#D97757" stroke-width="1.5">
+      <circle cx="0" cy="0" r="70" opacity="0">
+        <animate attributeName="r" values="60;150" dur="3.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.45;0" dur="3.6s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="0" cy="0" r="70" opacity="0">
+        <animate attributeName="r" values="60;150" dur="3.6s" begin="1.2s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.45;0" dur="3.6s" begin="1.2s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="0" cy="0" r="70" opacity="0">
+        <animate attributeName="r" values="60;150" dur="3.6s" begin="2.4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.45;0" dur="3.6s" begin="2.4s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <!-- shield mark (ShieldNotch geometry), centered -->
+    <g transform="translate(-80 -80) scale(160)">
+      <path d="M0.06 0.10 L0.34 0.10 L0.34 0.24 L0.66 0.24 L0.66 0.10 L0.94 0.10 L0.94 0.55 Q0.92 0.86 0.50 0.97 Q0.08 0.86 0.06 0.55 Z" fill="#D97757"/>
+      <rect x="0.415" y="0.39" width="0.17" height="0.34" rx="0.085" fill="#0A0A0B"/>
+    </g>
+  </g>
+
+  <!-- right: wordmark + tagline + decision pills -->
+  <g>
+    <text x="430" y="150" fill="#F5F2EC" font-size="66" font-weight="800" letter-spacing="1">SENTRY NOTCH</text>
+    <text x="432" y="192" fill="#D97757" font-size="21" font-weight="600">A permission checkpoint for coding agents.</text>
+    <text x="432" y="224" fill="#F5F2EC" fill-opacity="0.55" font-size="19">Answer Claude Code — and any agent — from your Mac's notch.</text>
+
+    <text x="432" y="262" fill="#F5F2EC" fill-opacity="0.4" font-size="13" letter-spacing="0.5" font-weight="600">ON&#8209;DEVICE&#160;&#160;·&#160;&#160;FAILS&#160;OPEN&#160;&#160;·&#160;&#160;NO&#160;TELEMETRY&#160;&#160;·&#160;&#160;TAMPER&#8209;EVIDENT&#160;LOG</text>
+
+    <!-- decision pills -->
+    <g transform="translate(430 288)" font-size="15" font-weight="600">
+      <!-- moving highlight -->
+      <rect x="-20" y="-3" width="90" height="44" rx="22" fill="#D97757" fill-opacity="0.5" filter="url(#soft)">
+        <animate attributeName="x" values="-20;520;-20" dur="4s" repeatCount="indefinite" keyTimes="0;0.5;1" calcMode="spline" keySplines="0.4 0 0.2 1;0.4 0 0.2 1"/>
+      </rect>
+      <!-- Deny (emphasised) -->
+      <rect x="0" y="0" width="92" height="38" rx="19" fill="#D97757"/>
+      <text x="46" y="24" fill="#0A0A0B" text-anchor="middle">Deny</text>
+      <!-- Allow Once -->
+      <rect x="102" y="0" width="128" height="38" rx="19" fill="#FFFAF5" fill-opacity="0.09"/>
+      <text x="166" y="24" fill="#F5F2EC" text-anchor="middle">Allow&#160;Once</text>
+      <!-- Always -->
+      <rect x="240" y="0" width="102" height="38" rx="19" fill="#FFFAF5" fill-opacity="0.09"/>
+      <text x="291" y="24" fill="#F5F2EC" text-anchor="middle">Always</text>
+      <!-- Bypass -->
+      <rect x="352" y="0" width="100" height="38" rx="19" fill="#FFFAF5" fill-opacity="0.09"/>
+      <text x="402" y="24" fill="#F5F2EC" text-anchor="middle">Bypass</text>
+    </g>
+  </g>
+</svg>

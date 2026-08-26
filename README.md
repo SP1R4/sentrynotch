@@ -1,13 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.png" width="128" alt="Sentry Notch" />
-
-# Sentry Notch
-
-### A permission checkpoint for coding agents — living in your Mac's notch.
-
-Answer Claude Code's permission prompts from the notch — **Deny · Allow Once · Always · Bypass** —
-with the risk spelled out, engagement scope enforced, and every decision logged locally.
+<img src="assets/hero.svg" alt="Sentry Notch — a permission checkpoint for coding agents, living in your Mac's notch" width="820" />
 
 <br/>
 
@@ -16,6 +9,7 @@ with the risk spelled out, engagement scope enforced, and every decision logged 
 ![License: MIT](https://img.shields.io/badge/License-MIT-3da35d)
 ![Fails open](https://img.shields.io/badge/design-fails%20open-e08a2b)
 ![No phone home](https://img.shields.io/badge/telemetry-none-4a7fd0)
+![Tamper-evident log](https://img.shields.io/badge/audit-tamper--evident-D97757)
 
 <br/>
 
@@ -29,17 +23,17 @@ with the risk spelled out, engagement scope enforced, and every decision logged 
 
 > [!WARNING]
 > **A review aid, not a security control.** Risk and scope checks are heuristics and *will* miss things.
-> The app deliberately **fails open**: if it isn't running, Claude Code's own permission flow proceeds
+> The app deliberately **fails open**: if it isn't running, your agent's own permission flow proceeds
 > untouched. Never rely on it as the only control over an autonomous agent.
 
 ## What it is
 
-Sentry Notch watches the Claude Code sessions **you** start in real terminals and brokers their
+Sentry Notch watches the coding-agent sessions **you** start in real terminals and brokers their
 tool-permission decisions from the notch. It is not a chat client and it never runs an agent of its
 own — it sits between the agent and the "yes/no" and gives you a fast, informed way to answer.
 
 Everything happens **on your machine**. No account, no server, no telemetry — the decision log lives
-in a local file you own.
+in a local file you own, and it's now **cryptographically tamper-evident**.
 
 ## Why
 
@@ -54,9 +48,14 @@ questions that actually matter when you're writing up what an agent did.
 |---|---|
 | **⌨️ Answer from the notch** | Deny / Allow Once / Always / Bypass. `⌘⇧Space` from anywhere, `⌘1`–`⌘4` for the top prompt, or reply straight from the notification. |
 | **⚠️ See the risk first** | `rm -rf`, `curl \| sh`, `sudo`, writes outside the working dir, edits to `.ssh` / `.env`, force-pushes — flagged before you decide. Edits show the real diff. |
+| **🛰️ Egress & exfil lens** | Catches data *leaving the box* — file uploads, `cat` a secret into `curl`/`nc`, base64-then-send, `scp`/`rsync` to a remote, new dependencies in a manifest. |
+| **🔭 Command pre-flight** | Before you approve Bash, see what `rm -rf` would *actually* delete (real file count + sample paths) and what a force-push / reset / clean will destroy. |
+| **📜 Policy engine** | Declarative **allow / deny / ask** rules — by tool, path glob, command regex, risk, scope, or host — checked before any auto-allow. A deny is honoured even out of scope. |
 | **🎯 Scope guard** | Define your engagement targets; out-of-scope hosts in a command get called out. |
-| **📓 Local audit log** | Every decision recorded to a file you own — browsable in-app, exportable as an engagement report. |
-| **🧩 Live session widgets** | Per-session cards, activity feed, token/usage strip, a focus timer, and now-playing — all optional. |
+| **⏱️ Trust windows** | "Trust reads here for 5 minutes" — a time-boxed auto-approve with a live countdown that revokes itself. No permanent grant left behind. |
+| **🛑 Panic stop** | One click denies every call instantly, plus a recoverable `git stash` undo of an agent's edits. |
+| **🔗 Tamper-evident audit log** | Every decision HMAC-chained to the last; a built-in verifier flags any altered, removed, or reordered record. Exportable as an engagement report. |
+| **🧩 Any agent** | Claude Code out of the box; a documented socket protocol + generic adapter lets Aider, and anything with a pre-tool hook, broker through the same notch. |
 | **🛟 Fails open, always** | The safety path never blocks your agent. If Sentry Notch isn't running, nothing changes. |
 
 ## Gallery
@@ -69,7 +68,7 @@ questions that actually matter when you're writing up what an agent did.
 </tr>
 <tr>
 <td width="50%"><img src="assets/activity.png" alt="Per-session activity feed" /><br/><sub><b>Activity</b> — the decision log, browsable.</sub></td>
-<td width="50%"><img src="assets/analytics.png" alt="Usage analytics" /><br/><sub><b>Analytics</b> — how much, by tool, over time.</sub></td>
+<td width="50%"><img src="assets/analytics.png" alt="Usage analytics" /><br/><sub><b>Analytics</b> — decisions and usage over time, with integrity verification.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="assets/rules.png" alt="Always-allow rules" /><br/><sub><b>Rules</b> — the always-allow decisions you've made.</sub></td>
@@ -77,6 +76,38 @@ questions that actually matter when you're writing up what an agent did.
 </tr>
 </table>
 </div>
+
+## How it works
+
+<div align="center">
+<img src="assets/flow.svg" alt="A coding agent's tool call flows through the hook to Sentry Notch; you decide; the answer returns; every decision is appended to a tamper-evident audit log." width="820" />
+</div>
+
+- A tiny **hook** forwards each permission request over a local Unix socket.
+- Sentry Notch analyses the tool call — **risk heuristics**, **exfil detection**, **scope matching**, and a
+  read-only **pre-flight** all run on-device — and surfaces it in the notch.
+- Your answer is sent back to the waiting agent; the decision is appended to the local, **HMAC-chained** audit log.
+- If the app isn't running, the socket isn't there, and the agent falls back to its own prompt flow —
+  the **fail-open** guarantee.
+
+No part of this contacts a network service **unless you turn on off-box alerts** and give it a
+webhook URL of your own (Plugins ▸ Off-box alerts) — an opt-in ping to a destination you choose,
+never a call home. See [PRIVACY.md](PRIVACY.md) for specifics.
+
+## Other agents
+
+Sentry Notch isn't Claude-only. The broker speaks a small, stable, agent-agnostic protocol over a
+local socket, so any agent with a pre-execution hook can route its tool-permission decisions through
+the notch. The easy path is the generic adapter — give it a tool call as JSON on stdin, gate on its
+exit code:
+
+```sh
+echo '{"agent":"aider","tool_name":"Bash","tool_input":{"command":"rm -rf build"},"cwd":"'"$PWD"'"}' \
+    | sentrynotch-broker.py || echo "blocked by Sentry Notch"
+```
+
+The agent's name shows as a tag on the permission card. See
+[hooks/BROKER_PROTOCOL.md](hooks/BROKER_PROTOCOL.md) for the wire format and the fail-open contract.
 
 ## Install
 
@@ -114,43 +145,17 @@ swift run SentryNotchTests  # run the test suite (no XCTest needed)
 
 Then open `SentryNotch.app`.
 
-## How it works
-
-- A tiny Claude Code **hook** forwards each permission request over a local Unix socket.
-- Sentry Notch analyses the tool call — **risk heuristics** and **scope matching** run on-device — and
-  surfaces it in the notch.
-- Your answer is sent back to the waiting agent; the decision is appended to the local **audit log**.
-- If the app isn't running, the socket isn't there, and Claude Code falls back to its own prompt flow —
-  the **fail-open** guarantee.
-
-No part of this contacts a network service **unless you turn on off-box alerts** and give it a
-webhook URL of your own (Plugins ▸ Off-box alerts) — an opt-in ping to a destination you choose,
-never a call home. See [PRIVACY.md](PRIVACY.md) for specifics.
-
-## Other agents
-
-Sentry Notch isn't Claude-only. The broker speaks a small, stable, agent-agnostic
-protocol over a local socket, so any agent with a pre-execution hook can route its
-tool-permission decisions through the notch. The easy path is the generic adapter —
-give it a tool call as JSON on stdin, gate on its exit code:
-
-```sh
-echo '{"agent":"aider","tool_name":"Bash","tool_input":{"command":"rm -rf build"},"cwd":"'"$PWD"'"}' \
-    | sentrynotch-broker.py || echo "blocked by Sentry Notch"
-```
-
-The agent's name shows as a tag on the permission card. See
-[hooks/BROKER_PROTOCOL.md](hooks/BROKER_PROTOCOL.md) for the wire format and the
-fail-open contract.
-
 ## Contributing
 
-Issues and PRs are welcome. The core, platform-agnostic logic (risk analysis, scope matching, analytics)
-lives in `Sources/SentryNotchCore` and is covered by the runner in `Tests/` — please keep it green:
+Issues and PRs are welcome. The core, platform-agnostic logic (risk analysis, exfil detection, the
+policy engine, the audit chain, analytics) lives in `Sources/SentryNotchCore` and is covered by the
+runner in `Tests/` — please keep it green:
 
 ```bash
 swift run SentryNotchTests
 ```
+
+The gallery is reproducible from seeded demo data (never real sessions): `./tools/screenshot.sh`.
 
 ## License
 
@@ -159,3 +164,4 @@ swift run SentryNotchTests
 <sub><b>Trademark:</b> "Sentry Notch" is the project's name; it is not affiliated with Sentry
 (sentry.io). If you distribute a fork, please ship it under a different name to avoid confusion.
 Every user-visible name and URL is centralised in `Sources/SentryNotchCore/Brand.swift`.</sub>
+</content>
