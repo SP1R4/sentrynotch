@@ -1250,5 +1250,19 @@ check(suggestPolicyRules(rows: histo, existing: [PolicyRule(name: "Deny psql", e
 check(suggestPolicyRules(rows: Array(histo.prefix(2)), existing: []).isEmpty,
       "below the threshold, nothing is suggested")
 
+// MARK: Policy packs
+let packs = builtinPolicyPacks()
+check(packs.count >= 3, "built-in packs are present")
+check(packs.allSatisfy { !$0.rules.isEmpty && $0.rules.allSatisfy { $0.isValid } },
+      "every built-in pack rule is valid")
+if let enc = packs[0].encoded(), let parsed = parsePolicyImport(enc) {
+    check(parsed.count == packs[0].rules.count, "a pack round-trips through export/import")
+    check(parsed.first?.id != packs[0].rules.first?.id, "imported rules get fresh ids (no collision)")
+} else { check(false, "pack encodes and re-imports") }
+// Bare rule array also imports.
+let bare = try! JSONEncoder().encode([PolicyRule(name: "x", effect: .deny, tools: ["Bash"])])
+check(parsePolicyImport(bare)?.count == 1, "a bare rule array imports too")
+check(parsePolicyImport(Data("not json".utf8)) == nil, "garbage import returns nil, not a crash")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
