@@ -1312,5 +1312,22 @@ young.add(tool: "Read", key: "Read")
 check(noveltyFlags(profile: young, tool: "Bash", key: "Bash|nc").isEmpty,
       "with too little history, nothing is flagged (no baseline)")
 
+// MARK: Session replay
+func ae(_ ts: String, _ decision: String, _ risk: String, _ project: String) -> ActivityEntry {
+    ActivityEntry(ts: ts, decision: decision, tool: "Bash", summary: "cmd", project: project, cwd: "/\(project)", risk: risk, key: "Bash|cmd")
+}
+let tl = [
+    ae("2026-01-01T10:00:00Z", "allow", "", "acme"),
+    ae("2026-01-01T09:00:00Z", "deny", "danger", "acme"),
+    ae("2026-01-01T11:00:00Z", "allow*", "caution", "acme"),
+    ae("2026-01-01T09:30:00Z", "allow", "", "other"),
+]
+check(timelineProjects(tl) == ["acme", "other"], "timeline projects listed and sorted")
+let acme = timeline(for: "acme", in: tl)
+check(acme.count == 3 && acme.first?.ts == "2026-01-01T09:00:00Z", "a project's timeline is chronological")
+let tlSum = summarizeTimeline(acme)
+check(tlSum.total == 3 && tlSum.denied == 1 && tlSum.highRisk == 1, "timeline summary counts denied and high-risk")
+check(highRiskMarkers(acme) == [0], "high-risk markers point at the danger entry (first chronologically)")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
