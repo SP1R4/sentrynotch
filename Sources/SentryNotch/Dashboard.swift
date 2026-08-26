@@ -13,6 +13,11 @@ final class DashboardWindowController {
 
     init(model: AppModel) { self.model = model }
 
+    /// CoreGraphics window number of the open dashboard, or nil. Used by the
+    /// screenshot harness (`SENTRYNOTCH_DASHBOARD=1`) to grab exactly this
+    /// window with `screencapture -l`.
+    var windowNumber: Int? { window?.windowNumber }
+
     func show() {
         if let window {
             window.makeKeyAndOrderFront(nil)
@@ -22,7 +27,14 @@ final class DashboardWindowController {
         let hosting = NSHostingController(rootView: DashboardView(model: model, settings: model.settings))
         let win = NSWindow(contentViewController: hosting)
         win.title = "\(Brand.name) — Dashboard"
-        win.styleMask = [.titled, .closable, .miniaturizable]
+        // Share the notch island's visual language: no titlebar chrome, the
+        // warm near-black panel running edge to edge under the traffic lights.
+        win.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        win.titlebarAppearsTransparent = true
+        win.titleVisibility = .hidden
+        win.isMovableByWindowBackground = true
+        win.backgroundColor = NSColor(srgbRed: 0.11, green: 0.105, blue: 0.10, alpha: 1) // CC.ink
+        win.appearance = NSAppearance(named: .darkAqua)  // keep the traffic lights light-on-dark
         win.isReleasedWhenClosed = false
         win.setContentSize(NSSize(width: 580, height: 600))
         win.center()
@@ -46,6 +58,9 @@ struct DashboardView: View {
         ?? .activity
     @State private var stats = AnalyticsSummary()
     @State private var tokens: [Tally] = []
+    @State private var integrity: AuditVerification?
+    @State private var integrityLegacy = 0
+    @State private var verifying = false
     @State private var reportFrom = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
     @State private var reportTo = Date()
 
@@ -125,7 +140,8 @@ struct DashboardView: View {
     }
 
     enum Tab: String, CaseIterable, Identifiable {
-        case activity = "Activity", rules = "Rules", scope = "Scope", analytics = "Analytics"
+        case activity = "Activity", rules = "Rules", policy = "Policy", scope = "Scope"
+        case analytics = "Analytics"
         case appearance = "Appearance", widgets = "Widgets", plugins = "Plugins"
         var id: String { rawValue }
     }
@@ -133,17 +149,14 @@ struct DashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Picker("", selection: $tab) {
-                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden()
-            .padding(.horizontal, 16).padding(.vertical, 12)
+            tabBar
             Divider().overlay(CC.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     switch tab {
                     case .activity:   activityTab
                     case .rules:      rulesTab
+                    case .policy:     policyTab
                     case .scope:      scopeTab
                     case .appearance: appearanceTab
                     case .widgets:    widgetsTab
@@ -163,9 +176,10 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Sentinel(size: 30,
-                     color: settings.mascotUsesProjectColor ? CC.coral : settings.accentColor,
-                     mood: settings.mascotEnabled ? .walking : .idle)
+            // The shield mark — the app's identity, matching the icon, the
+            // island toolbar, and the README. The owl mascot stays the notch's
+            // animated character; this brand surface uses the logo.
+            Mark(color: settings.accentColor)
                 .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 Text(Brand.name).font(.system(size: 15, weight: .bold, design: .rounded))
@@ -174,8 +188,40 @@ struct DashboardView: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 16).padding(.top, 16)
+        // Extra top inset clears the borderless titlebar's traffic lights, now
+        // that the panel runs full height under them.
+        .padding(.horizontal, 16).padding(.top, 28)
     }
+
+    /// Custom tab strip — the stock `.segmented` picker paints its selection in
+    /// the system accent (blue), which fights the coral brand. This tints the
+    /// selected tab with the user's accent instead. Horizontally scrollable so
+    /// it never clips on a narrow window.
+    private var tabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(Tab.allCases) { t in
+                    let selected = tab == t
+                    Button { tab = t } label: {
+                        Text(t.rawValue)
+                            .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? .white : CC.textDim)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(
+                                Capsule().fill(selected ? settings.accentColor : Color.clear))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Policy
+
+    private var policyTab: some View { PolicyEditor(settings: settings) }
 
     // MARK: - Appearance
 
@@ -194,6 +240,36 @@ struct DashboardView: View {
                         .help(a.name)
                 }
                 Spacer()
+            }
+            .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+
+            caption("NOTCH BACKGROUND")
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    ForEach(NotchBackground.allCases) { bg in
+                        let swatch = bg.presetColor ?? (Color(hex: settings.notchBackgroundHex) ?? CC.ink)
+                        Circle().fill(swatch).frame(width: 28, height: 28)
+                            .overlay(Circle().stroke(CC.hairline, lineWidth: 1))
+                            .overlay(Circle().stroke(CC.text,
+                                     lineWidth: settings.notchBackground == bg ? 2.5 : 0))
+                            .overlay(bg == .custom
+                                     ? Image(systemName: "eyedropper").font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(CC.text) : nil)
+                            .contentShape(Circle())
+                            .onTapGesture { settings.notchBackground = bg }
+                            .help(bg.name)
+                    }
+                    Spacer()
+                }
+                if settings.notchBackground == .custom {
+                    ColorPicker("Custom colour", selection: Binding(
+                        get: { Color(hex: settings.notchBackgroundHex) ?? CC.ink },
+                        set: { settings.notchBackgroundHex = $0.hexString }))
+                        .font(.system(size: 12)).foregroundStyle(CC.textDim)
+                }
+                Text("The top edge always stays near-black so the collapsed bar keeps blending into the physical notch.")
+                    .font(.system(size: 10)).foregroundStyle(CC.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
 
@@ -520,6 +596,42 @@ struct DashboardView: View {
             Text("The permission broker itself is always on — arm it with the Intercept switch in the notch.")
                 .font(.system(size: 10)).foregroundStyle(CC.textFaint)
                 .padding(.top, 2)
+
+            caption("OFF-BOX ALERTS")
+            alertsPanel
+        }
+    }
+
+    private var alertsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            toggleRow("Post alerts to a webhook",
+                      "Ping a URL (e.g. your Telegram admin bot) on high-signal prompts",
+                      $settings.alertsEnabled)
+            HStack(spacing: 8) {
+                Text("URL").font(.system(size: 11)).foregroundStyle(CC.textDim).frame(width: 34, alignment: .leading)
+                TextField("https://…/api/send_admins", text: $settings.alertWebhookURL)
+                    .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(CC.text).padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(CC.surfaceHi))
+            }
+            .disabled(!settings.alertsEnabled).opacity(settings.alertsEnabled ? 1 : 0.5)
+            toggleRow("Alert on every prompt",
+                      "Off (default): only high-risk / out-of-scope prompts fire",
+                      $settings.alertsAllPrompts)
+                .disabled(!settings.alertsEnabled).opacity(settings.alertsEnabled ? 1 : 0.5)
+            HStack {
+                Button { model.sendTestAlert() } label: {
+                    Label("Send test alert", systemImage: "paperplane")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(CC.text)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+                }.buttonStyle(.plain)
+                    .disabled(!settings.alertsEnabled || settings.alertWebhookURL.isEmpty)
+                Spacer()
+            }
+            Text("The alert carries a truncated summary — it leaves your machine, so it never ships a full command or file body.")
+                .font(.system(size: 10)).foregroundStyle(CC.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1052,6 +1164,45 @@ struct DashboardView: View {
                 caption("BUSIEST PROJECTS")
                 bars(stats.byProject)
 
+                caption("AUDIT INTEGRITY")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Every decision is HMAC-chained to the previous one. Verify recomputes the chain and reports the first altered, removed, or reordered record.")
+                        .font(.system(size: 11)).foregroundStyle(CC.textDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Button { verifyIntegrity() } label: {
+                            Label(verifying ? "Verifying…" : "Verify chain", systemImage: "checkmark.seal")
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(settings.accentColor))
+                        }.buttonStyle(.plain).disabled(verifying)
+                        Spacer()
+                    }
+                    if let v = integrity {
+                        if v.intact {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.seal.fill")
+                                Text("\(v.total) records — chain intact"
+                                     + (integrityLegacy > 0 ? " · \(integrityLegacy) legacy record\(integrityLegacy == 1 ? "" : "s") not covered" : ""))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color(red: 0.35, green: 0.72, blue: 0.5))
+                        } else {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "exclamationmark.octagon.fill")
+                                Text("Chain breaks at record \(v.firstBreak ?? 0)\(v.breakTimestamp.map { " (\($0))" } ?? "") — a record was altered, removed, or reordered.")
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(.red)
+                        }
+                        Text("Head \(String(model.auditHeadMAC().prefix(16)))… — anchor this off-box to catch a full-log rewrite.")
+                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(CC.textFaint)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+
                 caption("ENGAGEMENT REPORT")
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Export every recorded decision for a date range as Markdown — denied calls, high-risk calls, and per-project volume. Suitable for attaching to an engagement deliverable.")
@@ -1073,6 +1224,16 @@ struct DashboardView: View {
                 }
                 .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
             }
+        }
+    }
+
+    private func verifyIntegrity() {
+        verifying = true
+        Task {
+            let (r, legacy) = await model.verifyAuditAsync()
+            integrity = r
+            integrityLegacy = legacy
+            verifying = false
         }
     }
 
@@ -1100,23 +1261,61 @@ struct DashboardView: View {
         try? text.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    private var sparkline: some View {
-        let days: [Tally] = Array(stats.byDay.suffix(14))
-        let peak: Int = max(1, days.map { $0.count }.max() ?? 1)
-        return HStack(alignment: .bottom, spacing: 3) {
-            ForEach(days) { (d: Tally) in
-                let h: CGFloat = max(2, 44 * CGFloat(d.count) / CGFloat(peak))
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(settings.accentColor.opacity(0.75))
-                    // Capped so a two-day log doesn't render as two fat slabs.
-                    .frame(maxWidth: 26)
-                    .frame(height: h)
-                    .help("\(d.name): \(d.count)")
-            }
-            if days.isEmpty { Color.clear.frame(height: 44) }
-            Spacer(minLength: 0)
+    /// A full 14-slot calendar window ending today, so a sparse log reads as
+    /// "quiet days" rather than a lone bar floating in an empty box.
+    /// `stats.byDay` only carries days that had activity; the gaps are filled
+    /// here (the summariser stays clock-free by design).
+    private var last14Days: [Tally] {
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let counts = Dictionary(uniqueKeysWithValues: stats.byDay.map { ($0.name, $0.count) })
+        let today = cal.startOfDay(for: Date())
+        return (0..<14).reversed().compactMap { back in
+            guard let day = cal.date(byAdding: .day, value: -back, to: today) else { return nil }
+            let key = fmt.string(from: day)
+            return Tally(name: key, count: counts[key] ?? 0)
         }
-        .frame(height: 44)
+    }
+
+    private var sparkline: some View {
+        let days = last14Days
+        let peakDay = days.max { $0.count < $1.count }
+        let peak = max(1, peakDay?.count ?? 1)
+        return VStack(spacing: 6) {
+            // Peak read-out, so the tallest bar has a number without hovering.
+            HStack {
+                Spacer()
+                Text("peak ")
+                    .font(.system(size: 10)).foregroundStyle(CC.textDim)
+                + Text("\(peak)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(settings.accentColor)
+            }
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(days) { (d: Tally) in
+                    let h: CGFloat = d.count == 0 ? 3 : max(6, 44 * CGFloat(d.count) / CGFloat(peak))
+                    RoundedRectangle(cornerRadius: 2.5)
+                        // Reserve the saturated accent for the busiest day; the
+                        // rest sit back but stay legible, and empty days are a
+                        // faint baseline tick.
+                        .fill(d.count == 0 ? CC.textFaint
+                              : settings.accentColor.opacity(d.count == peak ? 0.95 : 0.62))
+                        .frame(maxWidth: 26)
+                        .frame(height: h)
+                        .frame(maxWidth: .infinity)
+                        .help("\(d.name): \(d.count)")
+                }
+            }
+            .frame(height: 44)
+            Rectangle().fill(CC.hairline).frame(height: 1)
+            HStack {
+                Text(days.first.map { String($0.name.suffix(5)) } ?? "")
+                Spacer()
+                Text("today")
+            }
+            .font(.system(size: 9, design: .monospaced)).foregroundStyle(CC.textFaint)
+        }
         .padding(12).frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
     }
@@ -1133,7 +1332,9 @@ struct DashboardView: View {
                     Text(it.name).font(.system(size: 11, weight: .medium))
                         .foregroundStyle(CC.text).frame(width: 110, alignment: .leading).lineLimit(1)
                     GeometryReader { geo in
-                        Capsule().fill(settings.accentColor.opacity(0.6))
+                        // Busiest row saturated, the rest dimmed — a hierarchy
+                        // rather than one flat wall of coral.
+                        Capsule().fill(settings.accentColor.opacity(it.count == peak ? 0.9 : 0.55))
                             .frame(width: max(3, geo.size.width * CGFloat(it.count) / CGFloat(peak)))
                     }
                     .frame(height: 8)
@@ -1148,8 +1349,8 @@ struct DashboardView: View {
 
     private func stat(_ value: String, _ label: String, _ tint: Color = CC.text) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(tint)
-            Text(label).font(.system(size: 9)).foregroundStyle(CC.textDim).lineLimit(1)
+            Text(value).font(.system(size: 19, weight: .bold, design: .rounded)).foregroundStyle(tint)
+            Text(label).font(.system(size: 10)).foregroundStyle(CC.textDim).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
@@ -1160,7 +1361,8 @@ struct DashboardView: View {
     // MARK: - Pieces
 
     private func caption(_ s: String) -> some View {
-        Text(s).font(.system(size: 9, weight: .bold)).foregroundStyle(CC.textFaint).padding(.top, 2)
+        Text(s).font(.system(size: 10, weight: .bold)).tracking(0.4)
+            .foregroundStyle(CC.textDim).padding(.top, 2)
     }
 
     private func toggleRow(_ title: String, _ detail: String, _ binding: Binding<Bool>) -> some View {

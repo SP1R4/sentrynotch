@@ -9,6 +9,10 @@ final class PermissionRequest: Identifiable {
     let cwd: String
     let toolName: String
     let toolInput: [String: Any]
+    /// Which agent asked. The broker protocol is agent-agnostic; this lets
+    /// non-Claude agents identify themselves so the card can label them.
+    /// Defaults to "claude" for requests that omit it.
+    let agent: String
     let terminal: String?
     let terminalPID: Int32?
     let claudePID: Int32?
@@ -29,6 +33,8 @@ final class PermissionRequest: Identifiable {
         self.cwd = json["cwd"] as? String ?? ""
         self.toolName = json["tool_name"] as? String ?? "?"
         self.toolInput = json["tool_input"] as? [String: Any] ?? [:]
+        let a = (json["agent"] as? String)?.trimmingCharacters(in: .whitespaces)
+        self.agent = (a?.isEmpty == false) ? a! : "claude"
         self.terminal = json["terminal"] as? String
         if let pid = json["terminal_pid"] as? Int { self.terminalPID = Int32(pid) }
         else { self.terminalPID = nil }
@@ -45,6 +51,7 @@ final class PermissionRequest: Identifiable {
         self.cwd = cwd
         self.toolName = demoToolName
         self.toolInput = input
+        self.agent = "claude"
         self.terminal = terminal
         self.terminalPID = nil
         self.claudePID = nil
@@ -59,6 +66,10 @@ final class PermissionRequest: Identifiable {
     // both the UI and the decision path live.
     lazy var detail: ToolDetail = toolDetail(toolName: toolName, input: toolInput)
     lazy var risk: RiskReport = analyzeRisk(toolName: toolName, input: toolInput, cwd: cwd)
+    /// Read-only "what will this actually do" preview for a Bash command: the
+    /// pure classification notes plus a real filesystem expansion of any `rm`
+    /// targets. Lazy — the FileManager walk is skipped until the card shows it.
+    lazy var preflight: [PreflightNote] = computePreflight()
 
     /// Human-readable one-liner for the tool call (command, file path, etc.).
     /// Lazy because the fallback branch serialises the whole input to JSON.
@@ -70,6 +81,94 @@ final class PermissionRequest: Identifiable {
            let s = String(data: data, encoding: .utf8) { return s }
         return ""
     }()
+
+    // MARK: - Pre-flight
+
+    private func computePreflight() -> [PreflightNote] {
+        guard toolName == "Bash", let cmd = toolInput["command"] as? String else { return [] }
+        var notes = preflightNotes(command: cmd)
+        let targets = removalTargets(command: cmd)
+        if !targets.isEmpty { notes += removalPreview(targets: targets, cwd: cwd) }
+        return notes
+    }
+
+    /// Expand rm targets against the filesystem (read-only) and summarise what a
+    /// deletion would remove — count, a few sample paths, and whether any land
+    /// outside the working directory or in a sensitive location. Bounded so a
+    /// glob over a huge tree can't stall the card.
+    private func removalPreview(targets: [String], cwd: String) -> [PreflightNote] {
+        let fm = FileManager.default
+        let cap = 5000
+        var total = 0, capped = false, outside = 0, sensitive = 0
+        var sample: [String] = []
+
+        for t in targets {
+            if capped { break }
+            for path in resolveTarget(t, cwd: cwd, fm: fm) {
+                if total >= cap { capped = true; break }
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: path, isDirectory: &isDir) else { continue }
+                if isDir.boolValue, let en = fm.enumerator(atPath: path) {
+                    var n = 1
+                    while en.nextObject() != nil { n += 1; if total + n >= cap { capped = true; break } }
+                    total += n
+                } else {
+                    total += 1
+                }
+                if sample.count < 4 { sample.append(abbrevPath(path)) }
+                if !isInsideDir(path, cwd) { outside += 1 }
+                if pathLooksSensitive(path) { sensitive += 1 }
+            }
+        }
+
+        guard total > 0 else { return [] }
+        var notes: [PreflightNote] = []
+        let count = capped ? "\(cap)+ items" : "\(total) item\(total == 1 ? "" : "s")"
+        let more = sample.count < total ? ", …" : ""
+        notes.append(.init(total > 50 ? .caution : .info,
+            "would delete \(count): \(sample.joined(separator: ", "))\(more)"))
+        if outside > 0 {
+            notes.append(.init(.danger, "\(outside) target\(outside == 1 ? "" : "s") outside the working directory"))
+        }
+        if sensitive > 0 {
+            notes.append(.init(.danger, "\(sensitive) target\(sensitive == 1 ? "" : "s") in a sensitive location"))
+        }
+        return notes
+    }
+
+    private func resolveTarget(_ t: String, cwd: String, fm: FileManager) -> [String] {
+        var p = (t as NSString).expandingTildeInPath
+        if !p.hasPrefix("/") { p = (cwd as NSString).appendingPathComponent(p) }
+        if p.contains("*") || p.contains("?") {
+            // Expand only the final component's glob via a directory scan (no
+            // shell). Fancier patterns fall through as a literal, which still
+            // counts correctly when the path happens to exist.
+            let dir = (p as NSString).deletingLastPathComponent
+            let base = (p as NSString).lastPathComponent
+            guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { return [] }
+            return entries.filter { globMatch(pattern: base, path: $0) }
+                .map { (dir as NSString).appendingPathComponent($0) }
+        }
+        return fm.fileExists(atPath: p) ? [p] : []
+    }
+
+    private func isInsideDir(_ path: String, _ dir: String) -> Bool {
+        guard !dir.isEmpty else { return true }
+        let p = URL(fileURLWithPath: path).standardizedFileURL.path
+        let d = URL(fileURLWithPath: dir).standardizedFileURL.path
+        return p == d || p.hasPrefix(d.hasSuffix("/") ? d : d + "/")
+    }
+
+    private func pathLooksSensitive(_ p: String) -> Bool {
+        let l = (p as NSString).expandingTildeInPath
+        return ["/.ssh/", "/.aws/", "/.gnupg/", "/.config/gcloud/", "/etc/",
+                "id_rsa", ".env", "credentials", "/.claude/"].contains { l.contains($0) }
+    }
+
+    private func abbrevPath(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
 
     /// decision ∈ {"allow","deny","ask"}. Writes the reply and closes the fd.
     func respond(_ decision: String, reason: String = "") {

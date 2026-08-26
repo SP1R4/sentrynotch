@@ -23,6 +23,7 @@ final class NotchController: NSObject {
     private var statusItem: NSStatusItem?
     private var cancellables = Set<AnyCancellable>()
     private var collapseWork: DispatchWorkItem?
+    private var expandWork: DispatchWorkItem?
     /// When the panel last took key status, used to ignore the spurious
     /// resign-key that arrives during focus handoff from another app.
     private var lastFocusAt = Date.distantPast
@@ -183,6 +184,19 @@ final class NotchController: NSObject {
             state.pinned = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.setExpanded(true)
+            }
+        }
+
+        // Screenshot aid: open the dashboard (on the tab from SENTRYNOTCH_TAB)
+        // and print its window number so the capture harness can grab exactly
+        // this window with `screencapture -l`.
+        if ProcessInfo.processInfo.environment["\(Brand.slug.uppercased())_DASHBOARD"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.dashboard.show()
+                if let n = self?.dashboard.windowNumber {
+                    print("DASHBOARD_WINDOW \(n)")
+                    fflush(stdout)
+                }
             }
         }
 
@@ -361,8 +375,16 @@ final class NotchController: NSObject {
 
     private func hover(_ hovering: Bool) {
         collapseWork?.cancel()
+        expandWork?.cancel()
         if hovering {
-            setExpanded(true)
+            // Hover intent: a brief settle before opening, so a cursor merely
+            // travelling across the notch doesn't yank the panel open. Cancelled
+            // the instant the pointer leaves, so a real approach still feels
+            // immediate but a fly-by doesn't. A pending prompt opens without the
+            // delay — that path calls setExpanded directly, not hover.
+            let work = DispatchWorkItem { [weak self] in self?.setExpanded(true) }
+            expandWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         } else if !state.pinned && model.pending.isEmpty {
             let work = DispatchWorkItem { [weak self] in self?.setExpanded(false) }
             collapseWork = work

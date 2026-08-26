@@ -42,6 +42,15 @@ enum SecurityPosture: String, CaseIterable, Identifiable {
 final class AppModel: ObservableObject {
     @Published var sessions: [SessionCard] = []
     @Published var pending: [PermissionRequest] = []
+    /// Time-boxed auto-approvals. Deliberately in-memory only: a trust window is
+    /// a "for the next few minutes" convenience, so it should never survive a
+    /// restart. Expired windows are swept in `tick()`.
+    @Published var trustWindows: [TrustWindow] = []
+    /// Panic stop: when armed, every intercepted tool call is denied outright —
+    /// the emergency brake for an agent going sideways. In-memory only.
+    @Published var panic = false
+    /// A brief status line shown in the expanded island after a panic action.
+    @Published var flash: String?
     @Published var bypassedSessions: Set<String> = []
     @Published var expandedSessionID: String? = nil
     @Published var activity: [ActivityItem] = []
@@ -272,6 +281,15 @@ final class AppModel: ObservableObject {
     /// Raw decision rows, for the engagement report exporter.
     func decisionRows() -> [DecisionRow] { audit.rows() }
 
+    /// Verify the audit log's tamper-evidence chain off the main thread.
+    nonisolated func verifyAuditAsync() async -> (result: AuditVerification, legacy: Int) {
+        let log = audit
+        return await Task.detached(priority: .userInitiated) { log.verify() }.value
+    }
+
+    /// The current chain head, for anchoring the log off-box.
+    func auditHeadMAC() -> String { audit.headMAC() }
+
     /// Standing rules the decision log suggests. Recomputed sparingly: it reads
     /// the whole log, and view code touches it on every prompt render.
     @Published private(set) var suggestions: [RuleSuggestion] = []
@@ -407,6 +425,24 @@ final class AppModel: ObservableObject {
         return flags
     }
 
+    /// Build the facts a policy rule is evaluated against, reusing the analysis
+    /// the permission card already ran (risk, out-of-scope hosts). `hosts` is
+    /// every referenced destination — computed here only when the policy is
+    /// actually active, so the common no-policy path pays nothing.
+    private func policyContext(_ req: PermissionRequest, breach: [String]) -> PolicyContext {
+        let input = req.toolInput
+        var paths: [String] = []
+        for key in ["file_path", "notebook_path", "path"] {
+            if let p = input[key] as? String { paths.append(p) }
+        }
+        let command = input["command"] as? String
+        // Only scan for all hosts if a rule could care about them (a hostGlob).
+        let needsHosts = settings.policyRules.contains { $0.enabled && $0.hostGlob != nil }
+        let hosts = needsHosts ? referencedHosts(texts: scannableTexts(input)) : breach
+        return PolicyContext(tool: req.toolName, paths: paths, command: command,
+                             risk: req.risk.level, hosts: hosts, outOfScopeHosts: breach)
+    }
+
     // MARK: - Incoming permission requests
 
     private func handle(_ req: PermissionRequest) {
@@ -419,13 +455,40 @@ final class AppModel: ObservableObject {
                          defaultOn: interceptNewSessions,
                          session: armingFor(req.sessionID)) else { req.respond("ask"); return }
 
+        // Panic stop outranks everything: an armed brake denies every call,
+        // risk and scope irrelevant.
+        if panic { finish(req, "deny", "Panic stop armed — denied via Sentry Notch", auto: true); return }
+
         // Scope is the engagement's legal boundary, so it outranks every
         // convenience grant. A stale Always-Allow rule or a session bypass must
         // not be able to wave through a host you aren't cleared to touch — an
         // out-of-scope call always surfaces, and fail-closed can still deny it
         // at the deadline.
         let breach = scopeFlags(req)
-        if breach.isEmpty {
+
+        // Declarative policy runs before the convenience tiers. An explicit
+        // deny is honoured even out of scope (fail-closed); an explicit allow is
+        // treated like any convenience grant, so a scope breach still surfaces
+        // it; an explicit prompt forces the card open, skipping the auto-allow
+        // tiers below. No matching rule falls through to the existing logic.
+        var forcePrompt = false
+        if settings.policyEnabled, !settings.policyRules.isEmpty,
+           let outcome = evaluatePolicy(policyContext(req, breach: breach), rules: settings.policyRules) {
+            switch outcome.effect {
+            case .deny:
+                finish(req, "deny", "Policy: \(outcome.ruleName)", auto: true); return
+            case .allow:
+                if breach.isEmpty { finish(req, "allow", "Policy: \(outcome.ruleName)", auto: true); return }
+            case .prompt:
+                forcePrompt = true
+            }
+        }
+
+        if !forcePrompt, breach.isEmpty {
+            if let tw = trustWindows.first(where: { $0.covers(cwd: req.cwd, tool: req.toolName, now: Date()) }) {
+                finish(req, "allow", "Trust window: \(tw.tier == .all ? "all tools" : "reads") · \(tw.label)", auto: true)
+                return
+            }
             if bypassedSessions.contains(req.sessionID) {
                 finish(req, "allow", "Session bypassed via Sentry Notch", auto: true); return
             }
@@ -441,6 +504,7 @@ final class AppModel: ObservableObject {
             }
         }
         pending.append(req)
+        fireAlert(req, breach: breach)
         playPromptSound(for: req)
         if settings.pluginOn("notifications") {
             notifications.post(id: req.id,
@@ -449,6 +513,32 @@ final class AppModel: ObservableObject {
                                highRisk: req.risk.level >= .high || !scopeFlags(req).isEmpty)
         }
         onNewPrompt?()
+    }
+
+    /// Best-effort off-box alert for a surfaced prompt. High-risk / out-of-scope
+    /// only, unless the user opts into every prompt. Never blocks the decision.
+    private func fireAlert(_ req: PermissionRequest, breach: [String]) {
+        guard settings.alertsEnabled, !settings.alertWebhookURL.isEmpty else { return }
+        let highSignal = req.risk.level >= .high || !breach.isEmpty
+        guard settings.alertsAllPrompts || highSignal else { return }
+        let event = AlertEvent(
+            event: "prompt", tool: req.toolName,
+            project: (req.cwd as NSString).lastPathComponent,
+            risk: req.risk.level.label, outOfScope: breach,
+            summary: req.summary, decision: nil,
+            ts: ISO8601DateFormatter().string(from: Date()))
+        AlertNotifier(url: settings.alertWebhookURL).send(event)
+    }
+
+    /// Post a test alert so the webhook can be verified from the dashboard.
+    func sendTestAlert() {
+        guard !settings.alertWebhookURL.isEmpty else { return }
+        let event = AlertEvent(
+            event: "prompt", tool: "Bash", project: "sentrynotch",
+            risk: "danger", outOfScope: ["test.example.com"],
+            summary: "test alert from Sentry Notch", decision: nil,
+            ts: ISO8601DateFormatter().string(from: Date()))
+        AlertNotifier(url: settings.alertWebhookURL).send(event)
     }
 
     /// Distinct pings by risk so a dangerous prompt sounds different from a safe
@@ -633,6 +723,82 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Trust windows
+
+    /// Start (or replace) a time-boxed auto-approval for a project. `cwd` empty
+    /// means every project. Replaces any existing window with the same scope so
+    /// re-granting extends rather than stacks.
+    func grantTrust(cwd: String, tier: TrustWindow.Tier, minutes: Int) {
+        let label = cwd.isEmpty ? "all projects" : (cwd as NSString).lastPathComponent
+        let window = TrustWindow(cwd: cwd, tier: tier,
+                                 expiresAt: Date().addingTimeInterval(Double(minutes) * 60),
+                                 label: label.isEmpty ? "session" : label)
+        trustWindows.removeAll { $0.cwd == cwd && $0.tier == tier }
+        trustWindows.append(window)
+    }
+
+    func revokeTrust(_ id: UUID) { trustWindows.removeAll { $0.id == id } }
+
+    // MARK: - Panic controls
+
+    /// Arm/disarm the panic stop. Arming immediately denies everything already
+    /// waiting, so a runaway agent is halted at once rather than at each prompt.
+    func setPanic(_ on: Bool) {
+        panic = on
+        if on {
+            // Route through finish() so each panic-deny is recorded in the audit
+            // log and its caches are cleaned — a manual respond() skipped both.
+            // Iterate a snapshot: finish() removes from `pending` as it goes.
+            for req in Array(pending) {
+                finish(req, "deny", "Panic stop armed — denied via Sentry Notch", auto: true)
+            }
+            trustWindows.removeAll()          // no auto-approvals survive a panic
+            bypassedSessions.removeAll()
+            showFlash("Panic stop armed — all calls will be denied")
+            NSSound(named: "Sosumi")?.play()
+        } else {
+            showFlash("Panic stop released")
+        }
+    }
+
+    /// Stash a project's uncommitted working changes — a *recoverable* undo of
+    /// what an agent just wrote. `git stash` keeps the changes (restore with
+    /// `git stash pop`), so this never destroys work; a runaway edit spree can
+    /// be shelved in one action and inspected later.
+    func stashSession(cwd: String, project: String) {
+        guard !cwd.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            p.arguments = ["git", "-C", cwd, "stash", "push", "-u", "-m", "sentrynotch panic \(stamp)"]
+            p.environment = ["PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"]
+            let out = Pipe(); p.standardOutput = out; p.standardError = out
+            let text: String
+            do {
+                try p.run()
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                let o = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                text = p.terminationStatus == 0
+                    ? (o.contains("No local changes") ? "\(project): nothing to stash" : "\(project): changes stashed (git stash pop to restore)")
+                    : "\(project): stash failed — not a git repo?"
+            } catch {
+                text = "\(project): stash failed to run"
+            }
+            Task { @MainActor [weak self] in self?.showFlash(text) }
+        }
+    }
+
+    /// Show a transient status line, auto-clearing after a few seconds.
+    private func showFlash(_ text: String) {
+        flash = text
+        let token = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            if self?.flash == token { self?.flash = nil }
+        }
+    }
+
     func injectDemoPrompt() {
         let req = PermissionRequest(
             demoToolName: "Bash",
@@ -697,6 +863,10 @@ final class AppModel: ObservableObject {
         }
         pending.removeAll { now >= $0.deadline }
         scopeCache = scopeCache.filter { id, _ in pending.contains { $0.id == id } }
+        // Expire trust windows the moment their clock runs out.
+        if trustWindows.contains(where: { !$0.active(now: now) }) {
+            trustWindows.removeAll { !$0.active(now: now) }
+        }
         // Reconcile so a dashboard toggle takes effect either way.
         reconcileSpotify()
         if !monitorCards.isEmpty { applySessions(monitorCards, force: tickCount % 10 == 0) }

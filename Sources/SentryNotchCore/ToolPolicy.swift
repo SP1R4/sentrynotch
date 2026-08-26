@@ -281,6 +281,19 @@ private let schemeHostPattern = try? NSRegularExpression(
 
 public func outOfScopeHosts(texts: [String], scope: ScopeConfig) -> [String] {
     guard !scope.isEmpty else { return [] }
+    return extractHosts(texts: texts).filter { !scope.covers($0) }.sorted()
+}
+
+/// Every host-like token referenced across the given strings, in or out of
+/// scope. Used by the policy engine's `hostGlob` condition, which matches any
+/// destination regardless of whether scope is configured.
+public func referencedHosts(texts: [String]) -> [String] {
+    extractHosts(texts: texts).sorted()
+}
+
+/// Shared host extraction — the token-scanning half of the scope check, without
+/// the scope filter so both the guard and the policy engine see the same set.
+private func extractHosts(texts: [String]) -> Set<String> {
     var hosts = Set<String>()
 
     for text in texts {
@@ -311,7 +324,7 @@ public func outOfScopeHosts(texts: [String], scope: ScopeConfig) -> [String] {
         }
     }
 
-    return hosts.filter { !scope.covers($0) }.sorted()
+    return hosts
 }
 
 /// A dotted token is a host unless its last label is a known file extension.

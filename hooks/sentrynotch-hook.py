@@ -85,6 +85,7 @@ def main():
     term_name, term_pid, claude_pid = ancestry()
     req = {
         "v": 1,
+        "agent": "claude",
         "session_id": data.get("session_id", ""),
         "cwd": data.get("cwd", ""),
         "tool_name": data.get("tool_name", ""),

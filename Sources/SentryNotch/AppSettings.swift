@@ -19,6 +19,38 @@ enum AccentChoice: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+/// The panel's base colour. The very top of the fill always stays near-black
+/// (`CC.inkTop`) so the collapsed bar keeps fusing with the physical notch —
+/// only the colour the panel settles into lower down is themed. `.custom` reads
+/// `AppSettings.notchBackgroundHex`.
+enum NotchBackground: String, CaseIterable, Codable, Identifiable {
+    case warmBlack, pureBlack, charcoal, midnight, forest, plum, custom
+    var id: String { rawValue }
+    var name: String {
+        switch self {
+        case .warmBlack: return "Warm Black"
+        case .pureBlack: return "Pure Black"
+        case .charcoal:  return "Charcoal"
+        case .midnight:  return "Midnight"
+        case .forest:    return "Forest"
+        case .plum:      return "Plum"
+        case .custom:    return "Custom"
+        }
+    }
+    /// The preset's base colour, or nil for `.custom` (which needs the stored hex).
+    var presetColor: Color? {
+        switch self {
+        case .warmBlack: return CC.ink
+        case .pureBlack: return Color(red: 0.02, green: 0.02, blue: 0.02)
+        case .charcoal:  return Color(red: 0.16, green: 0.16, blue: 0.17)
+        case .midnight:  return Color(red: 0.06, green: 0.09, blue: 0.17)
+        case .forest:    return Color(red: 0.06, green: 0.13, blue: 0.10)
+        case .plum:      return Color(red: 0.14, green: 0.07, blue: 0.15)
+        case .custom:    return nil
+        }
+    }
+}
+
 /// Whether the continuously-animating views (mascot, spinners, marquee) run.
 /// `system` follows macOS's Reduce Motion setting; the other two force it.
 enum AnimationMode: String, CaseIterable, Codable, Identifiable {
@@ -108,6 +140,20 @@ final class AppSettings: ObservableObject {
     /// Wash the whole expanded panel with a colour sampled from the current
     /// cover, the way Apple's full-screen player tints its background.
     @Published var panelTintFromArt: Bool { didSet { saveIfLoaded() } }
+    /// The notch panel's base colour, and the hex used when it is `.custom`.
+    @Published var notchBackground: NotchBackground { didSet { saveIfLoaded() } }
+    @Published var notchBackgroundHex: String { didSet { saveIfLoaded() } }
+    /// Declarative allow/deny/prompt policy, evaluated before the auto-allow
+    /// tiers. Empty by default, so existing users are unaffected until they add
+    /// a rule; `policyEnabled` is a master switch to mute the whole set at once.
+    @Published var policyEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var policyRules: [PolicyRule] { didSet { saveIfLoaded() } }
+    /// Optional off-box alerting: POST high-signal events to a webhook (e.g. a
+    /// Telegram admin bot). Off by default; when on, only high-risk /
+    /// out-of-scope events fire unless `alertsAllPrompts` is set.
+    @Published var alertsEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var alertWebhookURL: String { didSet { saveIfLoaded() } }
+    @Published var alertsAllPrompts: Bool { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -134,6 +180,13 @@ final class AppSettings: ObservableObject {
         nowPlayingShowVolume = true
         nowPlayingMarquee = true
         panelTintFromArt = true
+        notchBackground = .warmBlack
+        notchBackgroundHex = "1C1B1A"
+        policyEnabled = true
+        policyRules = []
+        alertsEnabled = false
+        alertWebhookURL = ""
+        alertsAllPrompts = false
         load()
         loaded = true
     }
@@ -146,6 +199,17 @@ final class AppSettings: ObservableObject {
     nonisolated static let defaultTimerPresets = [5, 15, 25, 45]
 
     var accentColor: Color { accent.color }
+
+    /// The colour the panel settles to at its base (preset, or the custom hex).
+    var notchBaseColor: Color {
+        notchBackground.presetColor ?? (Color(hex: notchBackgroundHex) ?? CC.ink)
+    }
+    /// The themed panel fill: near-black at the seam so the collapsed bar fuses
+    /// with the hardware, easing into the chosen base lower down.
+    var notchPanel: LinearGradient {
+        LinearGradient(colors: [CC.inkTop, notchBaseColor], startPoint: .top, endPoint: .bottom)
+    }
+
     func widgetOn(_ id: String) -> Bool { widgets[id] ?? true }
     func pluginOn(_ id: String) -> Bool { plugins[id] ?? true }
 
@@ -194,6 +258,13 @@ final class AppSettings: ObservableObject {
         var nowPlayingShowVolume = true
         var nowPlayingMarquee = true
         var panelTintFromArt = true
+        var notchBackground = NotchBackground.warmBlack
+        var notchBackgroundHex = "1C1B1A"
+        var policyEnabled = true
+        var policyRules: [PolicyRule] = []
+        var alertsEnabled = false
+        var alertWebhookURL = ""
+        var alertsAllPrompts = false
 
         init() {}
 
@@ -222,6 +293,13 @@ final class AppSettings: ObservableObject {
             nowPlayingShowVolume = (try? c.decode(Bool.self, forKey: .nowPlayingShowVolume)) ?? true
             nowPlayingMarquee = (try? c.decode(Bool.self, forKey: .nowPlayingMarquee)) ?? true
             panelTintFromArt = (try? c.decode(Bool.self, forKey: .panelTintFromArt)) ?? true
+            notchBackground = (try? c.decode(NotchBackground.self, forKey: .notchBackground)) ?? .warmBlack
+            notchBackgroundHex = (try? c.decode(String.self, forKey: .notchBackgroundHex)) ?? "1C1B1A"
+            policyEnabled = (try? c.decode(Bool.self, forKey: .policyEnabled)) ?? true
+            policyRules = (try? c.decode([PolicyRule].self, forKey: .policyRules)) ?? []
+            alertsEnabled = (try? c.decode(Bool.self, forKey: .alertsEnabled)) ?? false
+            alertWebhookURL = (try? c.decode(String.self, forKey: .alertWebhookURL)) ?? ""
+            alertsAllPrompts = (try? c.decode(Bool.self, forKey: .alertsAllPrompts)) ?? false
         }
     }
 
@@ -249,6 +327,13 @@ final class AppSettings: ObservableObject {
         nowPlayingShowVolume = s.nowPlayingShowVolume
         nowPlayingMarquee = s.nowPlayingMarquee
         panelTintFromArt = s.panelTintFromArt
+        notchBackground = s.notchBackground
+        notchBackgroundHex = s.notchBackgroundHex
+        policyEnabled = s.policyEnabled
+        policyRules = s.policyRules
+        alertsEnabled = s.alertsEnabled
+        alertWebhookURL = s.alertWebhookURL
+        alertsAllPrompts = s.alertsAllPrompts
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -275,7 +360,17 @@ final class AppSettings: ObservableObject {
         s.nowPlayingShowVolume = nowPlayingShowVolume
         s.nowPlayingMarquee = nowPlayingMarquee
         s.panelTintFromArt = panelTintFromArt
+        s.notchBackground = notchBackground
+        s.notchBackgroundHex = notchBackgroundHex
+        s.policyEnabled = policyEnabled
+        s.policyRules = policyRules
+        s.alertsEnabled = alertsEnabled
+        s.alertWebhookURL = alertWebhookURL
+        s.alertsAllPrompts = alertsAllPrompts
         guard let data = try? JSONEncoder().encode(s) else { return }
-        try? data.write(to: URL(fileURLWithPath: path))
+        // Atomic: policy-rule and webhook edits save on every keystroke, so a
+        // crash mid-write must not truncate settings.json — a corrupt file
+        // fails the whole-object decode and drops every setting.
+        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }

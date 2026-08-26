@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="1200" height="260" font-family="-apple-system, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif" role="img" aria-label="How it works: a coding agent's tool call flows through the hook to Sentry Notch, you decide, and the answer returns — with a tamper-evident audit log">
+  <defs>
+    <linearGradient id="fbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A0A0B"/><stop offset="1" stop-color="#141417"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#D97757"/>
+    </marker>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="258" rx="20" fill="url(#fbg)"/>
+  <rect x="1.5" y="1.5" width="1197" height="257" rx="19.5" fill="none" stroke="#FFFAF5" stroke-opacity="0.08"/>
+
+  <!-- forward connectors: flowing coral dashes -->
+  <g stroke="#D97757" stroke-width="2.5" fill="none" marker-end="url(#arrow)">
+    <line x1="292" y1="95" x2="337" y2="95" stroke-dasharray="6 6">
+      <animate attributeName="stroke-dashoffset" values="24;0" dur="0.9s" repeatCount="indefinite"/>
+    </line>
+    <line x1="588" y1="95" x2="633" y2="95" stroke-dasharray="6 6">
+      <animate attributeName="stroke-dashoffset" values="24;0" dur="0.9s" repeatCount="indefinite"/>
+    </line>
+    <line x1="884" y1="95" x2="929" y2="95" stroke-dasharray="6 6">
+      <animate attributeName="stroke-dashoffset" values="24;0" dur="0.9s" repeatCount="indefinite"/>
+    </line>
+  </g>
+
+  <!-- nodes -->
+  <g font-size="17" font-weight="700" fill="#F5F2EC">
+    <g>
+      <rect x="52" y="58" width="240" height="74" rx="14" fill="#FFFAF5" fill-opacity="0.05" stroke="#FFFAF5" stroke-opacity="0.1"/>
+      <text x="172" y="92" text-anchor="middle">Coding agent</text>
+      <text x="172" y="114" text-anchor="middle" font-size="12.5" font-weight="500" fill="#F5F2EC" fill-opacity="0.55">Claude Code · Aider · any</text>
+    </g>
+    <g>
+      <rect x="348" y="58" width="240" height="74" rx="14" fill="#FFFAF5" fill-opacity="0.05" stroke="#FFFAF5" stroke-opacity="0.1"/>
+      <text x="468" y="92" text-anchor="middle">Local socket</text>
+      <text x="468" y="114" text-anchor="middle" font-size="12.5" font-weight="500" fill="#F5F2EC" fill-opacity="0.55">newline-JSON · fails open</text>
+    </g>
+    <g>
+      <rect x="644" y="52" width="240" height="86" rx="14" fill="#D97757" fill-opacity="0.14" stroke="#D97757" stroke-opacity="0.55"/>
+      <text x="764" y="88" text-anchor="middle" fill="#F5F2EC">Sentry Notch</text>
+      <text x="764" y="110" text-anchor="middle" font-size="12.5" font-weight="500" fill="#D97757">risk · scope · pre-flight</text>
+    </g>
+    <g>
+      <rect x="940" y="58" width="220" height="74" rx="14" fill="#FFFAF5" fill-opacity="0.05" stroke="#FFFAF5" stroke-opacity="0.1"/>
+      <text x="1050" y="92" text-anchor="middle">You decide</text>
+      <text x="1050" y="114" text-anchor="middle" font-size="12.5" font-weight="500" fill="#F5F2EC" fill-opacity="0.55">Deny · Allow · Ask</text>
+    </g>
+  </g>
+
+  <!-- return path: the answer flows back to the agent -->
+  <path id="ret" d="M1050 132 L1050 196 Q1050 210 1036 210 L186 210 Q172 210 172 196 L172 132"
+        fill="none" stroke="#D97757" stroke-opacity="0.6" stroke-width="2" stroke-dasharray="5 7" marker-end="url(#arrow)">
+    <animate attributeName="stroke-dashoffset" values="0;-24" dur="1.1s" repeatCount="indefinite"/>
+  </path>
+  <text x="600" y="204" text-anchor="middle" font-size="12.5" font-weight="600" fill="#F5F2EC" fill-opacity="0.5">the decision returns to the waiting agent — every one appended to a tamper-evident audit log</text>
+
+  <!-- traveling packet along the return path -->
+  <circle r="4" fill="#D97757">
+    <animateMotion dur="2.6s" repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear">
+      <mpath href="#ret"/>
+    </animateMotion>
+  </circle>
+
+  <text x="24" y="34" font-size="13" font-weight="700" letter-spacing="0.5" fill="#F5F2EC" fill-opacity="0.4">HOW IT WORKS</text>
+</svg>
