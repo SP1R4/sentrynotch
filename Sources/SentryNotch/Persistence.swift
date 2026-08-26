@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SentryNotchCore
 
 /// Persisted Always-Allow rules and bypassed sessions, so they survive an app
@@ -126,6 +127,17 @@ struct AuditLog: Sendable {
     private let path: String
     private let dir: String
     private let queue = DispatchQueue(label: "sentrynotch.audit")
+    /// Per-install HMAC key for the tamper-evidence chain, and the running MAC
+    /// of the most recent record. Both are only ever touched on `queue`.
+    private let key: SymmetricKey
+    private let chain: ChainState
+
+    /// Running chain head. A reference type so the value-type `AuditLog` can
+    /// update it from the write queue; guarded by that queue, hence unchecked.
+    final class ChainState: @unchecked Sendable {
+        var lastMAC: String
+        init(_ v: String) { lastMAC = v }
+    }
 
     /// Rotate once the live file passes this. At roughly 530 bytes a decision
     /// that is ~9,000 records per file — enough that most users never rotate,
@@ -136,6 +148,42 @@ struct AuditLog: Sendable {
     init(dir: String) {
         self.dir = dir
         self.path = "\(dir)/\(Self.stem).jsonl"
+        self.key = Self.loadOrCreateKey(dir: dir)
+        // Resume the chain from the most recent MAC on disk so appends after a
+        // restart link to the prior record rather than restarting the chain.
+        self.chain = ChainState(auditGenesis)
+        self.chain.lastMAC = lastMACOnDisk() ?? auditGenesis
+    }
+
+    /// Load the per-install MAC key, or mint one and store it 0600. A key file
+    /// beside the log is the pragmatic choice for an unsigned app with no
+    /// Keychain entitlement; the threat model in AuditChain.swift says what that
+    /// does and doesn't buy.
+    private static func loadOrCreateKey(dir: String) -> SymmetricKey {
+        let path = "\(dir)/audit.key"
+        if let data = FileManager.default.contents(atPath: path), data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        let key = SymmetricKey(size: .bits256)
+        let data = key.withUnsafeBytes { Data($0) }
+        FileManager.default.createFile(atPath: path, contents: data,
+                                       attributes: [.posixPermissions: 0o600])
+        return key
+    }
+
+    /// The MAC of the newest record on disk, scanning newest file first, or nil
+    /// for a fresh or pre-chain log.
+    private func lastMACOnDisk() -> String? {
+        for file in logPaths() {
+            guard let text = try? String(contentsOfFile: file, encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n").reversed() {
+                if let o = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                   let mac = o["mac"] as? String, !mac.isEmpty {
+                    return mac
+                }
+            }
+        }
+        return nil
     }
 
     /// Archive filenames present on disk, newest-first order applied by caller.
@@ -246,21 +294,22 @@ struct AuditLog: Sendable {
     }
 
     func record(decision: String, toolName: String, summary: String,
-                sessionID: String, cwd: String, riskLevel: String, key: String = "") {
-        let entry: [String: Any] = [
-            "key": key,
-            "ts": ISO8601DateFormatter().string(from: Date()),
-            "decision": decision,
-            "tool": toolName,
-            "summary": String(summary.prefix(2000)),
-            "session_id": sessionID,
-            "cwd": cwd,
-            "risk": riskLevel,
-        ]
+                sessionID: String, cwd: String, riskLevel: String, key ruleKey: String = "") {
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let sum = String(summary.prefix(2000))
+        let fields = AuditFields(ts: ts, decision: decision, tool: toolName, summary: sum,
+                                 sessionID: sessionID, cwd: cwd, risk: riskLevel, key: ruleKey)
         queue.async {
             // Checked on the write queue so the size test and the append can't
-            // interleave with another writer.
+            // interleave with another writer — and so the chain head advances
+            // in strict write order.
             rotateIfNeeded()
+            let mac = auditMAC(key: self.key, prevMAC: self.chain.lastMAC, fields: fields)
+            let entry: [String: Any] = [
+                "key": ruleKey, "ts": ts, "decision": decision, "tool": toolName,
+                "summary": sum, "session_id": sessionID, "cwd": cwd, "risk": riskLevel,
+                "mac": mac,
+            ]
             guard var data = try? JSONSerialization.data(withJSONObject: entry) else { return }
             data.append(0x0A)
             if let handle = FileHandle(forWritingAtPath: path) {
@@ -270,6 +319,36 @@ struct AuditLog: Sendable {
             } else {
                 try? data.write(to: URL(fileURLWithPath: path))
             }
+            // Advance the chain head only after the record is on disk.
+            self.chain.lastMAC = mac
         }
     }
+
+    /// Verify the tamper-evidence chain over the whole log. Reads oldest→newest
+    /// across rotated files and recomputes every MAC. Records without a MAC
+    /// (written before the chain existed) are counted separately, not treated as
+    /// a break. Off the main thread — the caller hops back for the UI.
+    func verify() -> (result: AuditVerification, legacy: Int) {
+        var records: [(fields: AuditFields, storedMAC: String)] = []
+        var legacy = 0
+        for file in logPaths().reversed() {   // oldest file first
+            guard let text = try? String(contentsOfFile: file, encoding: .utf8) else { continue }
+            for line in text.split(separator: "\n") {
+                guard let o = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+                else { continue }
+                guard let mac = o["mac"] as? String, !mac.isEmpty else { legacy += 1; continue }
+                let f = AuditFields(
+                    ts: o["ts"] as? String ?? "", decision: o["decision"] as? String ?? "",
+                    tool: o["tool"] as? String ?? "", summary: o["summary"] as? String ?? "",
+                    sessionID: o["session_id"] as? String ?? "", cwd: o["cwd"] as? String ?? "",
+                    risk: o["risk"] as? String ?? "", key: o["key"] as? String ?? "")
+                records.append((f, mac))
+            }
+        }
+        return (verifyAuditChain(records, key: key), legacy)
+    }
+
+    /// The current chain head, for anchoring off-box (an engagement record, a
+    /// message to yourself) so adversarial rewrites of the whole log are caught.
+    func headMAC() -> String { chain.lastMAC }
 }

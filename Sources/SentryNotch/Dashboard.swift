@@ -53,6 +53,9 @@ struct DashboardView: View {
         ?? .activity
     @State private var stats = AnalyticsSummary()
     @State private var tokens: [Tally] = []
+    @State private var integrity: AuditVerification?
+    @State private var integrityLegacy = 0
+    @State private var verifying = false
     @State private var reportFrom = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
     @State private var reportTo = Date()
 
@@ -1120,6 +1123,45 @@ struct DashboardView: View {
                 caption("BUSIEST PROJECTS")
                 bars(stats.byProject)
 
+                caption("AUDIT INTEGRITY")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Every decision is HMAC-chained to the previous one. Verify recomputes the chain and reports the first altered, removed, or reordered record.")
+                        .font(.system(size: 11)).foregroundStyle(CC.textDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        Button { verifyIntegrity() } label: {
+                            Label(verifying ? "Verifying…" : "Verify chain", systemImage: "checkmark.seal")
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(settings.accentColor))
+                        }.buttonStyle(.plain).disabled(verifying)
+                        Spacer()
+                    }
+                    if let v = integrity {
+                        if v.intact {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.seal.fill")
+                                Text("\(v.total) records — chain intact"
+                                     + (integrityLegacy > 0 ? " · \(integrityLegacy) legacy record\(integrityLegacy == 1 ? "" : "s") not covered" : ""))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color(red: 0.35, green: 0.72, blue: 0.5))
+                        } else {
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "exclamationmark.octagon.fill")
+                                Text("Chain breaks at record \(v.firstBreak ?? 0)\(v.breakTimestamp.map { " (\($0))" } ?? "") — a record was altered, removed, or reordered.")
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(.red)
+                        }
+                        Text("Head \(String(model.auditHeadMAC().prefix(16)))… — anchor this off-box to catch a full-log rewrite.")
+                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(CC.textFaint)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+
                 caption("ENGAGEMENT REPORT")
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Export every recorded decision for a date range as Markdown — denied calls, high-risk calls, and per-project volume. Suitable for attaching to an engagement deliverable.")
@@ -1141,6 +1183,16 @@ struct DashboardView: View {
                 }
                 .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
             }
+        }
+    }
+
+    private func verifyIntegrity() {
+        verifying = true
+        Task {
+            let (r, legacy) = await model.verifyAuditAsync()
+            integrity = r
+            integrityLegacy = legacy
+            verifying = false
         }
     }
 

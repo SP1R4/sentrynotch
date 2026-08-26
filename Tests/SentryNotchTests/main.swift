@@ -1135,5 +1135,48 @@ check(removalTargets(command: "ls -rf x").isEmpty, "non-rm command yields no tar
 check(removalTargets(command: "rm -- -weird-name") == ["-weird-name"] || removalTargets(command: "rm -- -weird-name").isEmpty,
       "end-of-options handled without crashing")
 
+// MARK: Audit chain (tamper-evidence)
+import CryptoKit
+do {
+    let k = SymmetricKey(size: .bits256)
+    func f(_ ts: String, _ d: String) -> AuditFields {
+        AuditFields(ts: ts, decision: d, tool: "Bash", summary: "cmd \(ts)",
+                    sessionID: "s1", cwd: "/p", risk: "", key: "Bash|cmd")
+    }
+    // Build a valid 3-record chain the way the writer does.
+    var prev = auditGenesis
+    var chain: [(fields: AuditFields, storedMAC: String)] = []
+    for (ts, d) in [("2026-01-01T00:00:00Z", "allow"), ("2026-01-01T00:01:00Z", "deny"),
+                    ("2026-01-01T00:02:00Z", "allow")] {
+        let fields = f(ts, d)
+        let mac = auditMAC(key: k, prevMAC: prev, fields: fields)
+        chain.append((fields, mac)); prev = mac
+    }
+    check(verifyAuditChain(chain, key: k).intact, "an untampered chain verifies")
+    check(verifyAuditChain(chain, key: k).total == 3, "chain reports the record count")
+
+    // Tamper with a field of record 2 — its stored MAC no longer matches.
+    var tampered = chain
+    tampered[1].fields = AuditFields(ts: tampered[1].fields.ts, decision: "allow", // deny -> allow
+                                     tool: "Bash", summary: tampered[1].fields.summary,
+                                     sessionID: "s1", cwd: "/p", risk: "", key: "Bash|cmd")
+    let t = verifyAuditChain(tampered, key: k)
+    check(!t.intact && t.firstBreak == 2, "editing a record's decision breaks the chain at that record")
+
+    // Delete the middle record — record 3's prev no longer matches.
+    let truncated = [chain[0], chain[2]]
+    check(!verifyAuditChain(truncated, key: k).intact, "removing a record breaks the chain")
+
+    // Reorder — swapping two records breaks the chain.
+    let reordered = [chain[1], chain[0], chain[2]]
+    check(!verifyAuditChain(reordered, key: k).intact, "reordering records breaks the chain")
+
+    // The wrong key can't verify a genuine chain (key held off-log matters).
+    check(!verifyAuditChain(chain, key: SymmetricKey(size: .bits256)).intact,
+          "a different key fails to verify")
+
+    check(verifyAuditChain([], key: k).intact, "an empty log is trivially intact")
+}
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

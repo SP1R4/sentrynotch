@@ -272,6 +272,15 @@ final class AppModel: ObservableObject {
     /// Raw decision rows, for the engagement report exporter.
     func decisionRows() -> [DecisionRow] { audit.rows() }
 
+    /// Verify the audit log's tamper-evidence chain off the main thread.
+    nonisolated func verifyAuditAsync() async -> (result: AuditVerification, legacy: Int) {
+        let log = audit
+        return await Task.detached(priority: .userInitiated) { log.verify() }.value
+    }
+
+    /// The current chain head, for anchoring the log off-box.
+    func auditHeadMAC() -> String { audit.headMAC() }
+
     /// Standing rules the decision log suggests. Recomputed sparingly: it reads
     /// the whole log, and view code touches it on every prompt render.
     @Published private(set) var suggestions: [RuleSuggestion] = []
