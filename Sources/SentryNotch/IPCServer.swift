@@ -9,6 +9,10 @@ final class PermissionRequest: Identifiable {
     let cwd: String
     let toolName: String
     let toolInput: [String: Any]
+    /// Which agent asked. The broker protocol is agent-agnostic; this lets
+    /// non-Claude agents identify themselves so the card can label them.
+    /// Defaults to "claude" for requests that omit it.
+    let agent: String
     let terminal: String?
     let terminalPID: Int32?
     let claudePID: Int32?
@@ -29,6 +33,8 @@ final class PermissionRequest: Identifiable {
         self.cwd = json["cwd"] as? String ?? ""
         self.toolName = json["tool_name"] as? String ?? "?"
         self.toolInput = json["tool_input"] as? [String: Any] ?? [:]
+        let a = (json["agent"] as? String)?.trimmingCharacters(in: .whitespaces)
+        self.agent = (a?.isEmpty == false) ? a! : "claude"
         self.terminal = json["terminal"] as? String
         if let pid = json["terminal_pid"] as? Int { self.terminalPID = Int32(pid) }
         else { self.terminalPID = nil }
@@ -45,6 +51,7 @@ final class PermissionRequest: Identifiable {
         self.cwd = cwd
         self.toolName = demoToolName
         self.toolInput = input
+        self.agent = "claude"
         self.terminal = terminal
         self.terminalPID = nil
         self.claudePID = nil

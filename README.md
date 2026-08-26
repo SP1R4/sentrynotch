@@ -117,6 +117,22 @@ No part of this contacts a network service **unless you turn on off-box alerts**
 webhook URL of your own (Plugins ▸ Off-box alerts) — an opt-in ping to a destination you choose,
 never a call home. See [PRIVACY.md](PRIVACY.md) for specifics.
 
+## Other agents
+
+Sentry Notch isn't Claude-only. The broker speaks a small, stable, agent-agnostic
+protocol over a local socket, so any agent with a pre-execution hook can route its
+tool-permission decisions through the notch. The easy path is the generic adapter —
+give it a tool call as JSON on stdin, gate on its exit code:
+
+```sh
+echo '{"agent":"aider","tool_name":"Bash","tool_input":{"command":"rm -rf build"},"cwd":"'"$PWD"'"}' \
+    | sentrynotch-broker.py || echo "blocked by Sentry Notch"
+```
+
+The agent's name shows as a tag on the permission card. See
+[hooks/BROKER_PROTOCOL.md](hooks/BROKER_PROTOCOL.md) for the wire format and the
+fail-open contract.
+
 ## Contributing
 
 Issues and PRs are welcome. The core, platform-agnostic logic (risk analysis, scope matching, analytics)

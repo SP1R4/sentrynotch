@@ -978,6 +978,7 @@ private struct PermissionCard: View {
                 IconButton(system: "arrow.up.forward.app", tint: CC.textDim) { model.focusTerminal(req) }
             }
             Spacer()
+            if req.agent != "claude" { Tag(text: req.agent, tint: model.settings.accentColor) }
             Tag(text: req.toolName, tint: CC.coral)
         }
     }
