@@ -894,6 +894,7 @@ private struct PermissionCard: View {
             ScopeBanner(hosts: model.scopeFlags(req))
             BlastBanner(radius: model.blast(req))
             DetailView(detail: req.detail)
+            PreflightBanner(notes: req.preflight)
             if let s = model.suggestion(for: req) { SuggestionBar(model: model, suggestion: s) }
             countdown
             HStack(spacing: 6) {
@@ -967,6 +968,40 @@ private struct RiskBanner: View {
         }
     }
     private var tint: Color { risk.level >= .high ? .red : .orange }
+}
+
+/// Read-only "what this will actually do" preview — rm expansion counts and
+/// irreversible-git notes — so a Bash decision isn't made blind.
+private struct PreflightBanner: View {
+    let notes: [PreflightNote]
+    var body: some View {
+        if !notes.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Pre-flight", systemImage: "binoculars.fill")
+                    .font(.system(size: 10, weight: .bold)).foregroundStyle(CC.textDim)
+                ForEach(notes) { note in
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: icon(note.severity)).font(.system(size: 10))
+                        Text(note.text).font(.system(size: 11))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(color(note.severity))
+                }
+            }
+            .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9).fill(CC.surfaceHi))
+        }
+    }
+    private func color(_ s: PreflightNote.Severity) -> Color {
+        switch s { case .danger: return .red; case .caution: return .orange; case .info: return CC.textDim }
+    }
+    private func icon(_ s: PreflightNote.Severity) -> String {
+        switch s {
+        case .danger: return "exclamationmark.octagon.fill"
+        case .caution: return "exclamationmark.triangle.fill"
+        case .info: return "info.circle"
+        }
+    }
 }
 
 private struct ScopeBanner: View {

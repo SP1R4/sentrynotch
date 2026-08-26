@@ -1114,5 +1114,26 @@ check(analyzeRisk(toolName: "Edit",
       cwd: "/p").reasons.contains { $0.contains("evil-pkg") },
       "editing a manifest to add a dep surfaces the dep name")
 
+// MARK: Pre-flight
+func pfTexts(_ cmd: String) -> [String] { preflightNotes(command: cmd).map(\.text) }
+check(preflightNotes(command: "git push --force origin main").contains { $0.severity == .danger },
+      "force-push flagged danger")
+check(preflightNotes(command: "git push --force-with-lease").first?.severity == .caution,
+      "force-with-lease is caution, not danger")
+check(pfTexts("git reset --hard HEAD~2").contains { $0.contains("uncommitted") },
+      "reset --hard explained")
+check(pfTexts("git clean -fd").contains { $0.contains("directories") }, "git clean -fd notes directories")
+check(preflightNotes(command: "ls -la").isEmpty, "a safe command has no pre-flight notes")
+check(pfTexts("dd if=/dev/zero of=/dev/disk2").contains { $0.contains("raw") }, "dd flagged")
+
+// Removal target parsing
+check(removalTargets(command: "rm -rf build node_modules") == ["build", "node_modules"],
+      "rm targets extracted, flags dropped")
+check(removalTargets(command: "rm -rf build && echo done") == ["build"],
+      "rm targets stop at a shell separator")
+check(removalTargets(command: "ls -rf x").isEmpty, "non-rm command yields no targets")
+check(removalTargets(command: "rm -- -weird-name") == ["-weird-name"] || removalTargets(command: "rm -- -weird-name").isEmpty,
+      "end-of-options handled without crashing")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
