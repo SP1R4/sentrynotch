@@ -21,6 +21,12 @@ to make. That content — source code, shell commands, file paths, client names 
 | Context-token counts | The analytics trend | `tokens.jsonl`, on your disk |
 | Now-playing track (if the Now playing widget is on) | To draw the widget | Read from the local Spotify or Apple Music app; not stored |
 | A YouTube tab's title (only if you pick YouTube as the source) | To draw the widget | Read from your browser; **only tabs whose URL is YouTube**; not stored |
+| A high-risk / out-of-scope alert (only if you turn on off-box alerts) | To ping you when you're away from the machine | POSTed to a webhook **URL you supply** — a truncated summary, tool name, project, and risk; opt-in and off by default |
+
+The audit log is also **tamper-evident**: each decision is HMAC-chained to the
+previous one, keyed by a per-install secret stored at `audit.key` (owner-only,
+`0600`) in the same directory. The key never leaves your machine; it exists so
+you can prove the log wasn't altered after the fact.
 
 Everything the app writes lives in:
 

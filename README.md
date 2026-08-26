@@ -113,7 +113,9 @@ Then open `SentryNotch.app`.
 - If the app isn't running, the socket isn't there, and Claude Code falls back to its own prompt flow —
   the **fail-open** guarantee.
 
-No part of this contacts a network service. See [PRIVACY.md](PRIVACY.md) for specifics.
+No part of this contacts a network service **unless you turn on off-box alerts** and give it a
+webhook URL of your own (Plugins ▸ Off-box alerts) — an opt-in ping to a destination you choose,
+never a call home. See [PRIVACY.md](PRIVACY.md) for specifics.
 
 ## Contributing
 

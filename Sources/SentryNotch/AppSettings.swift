@@ -148,6 +148,12 @@ final class AppSettings: ObservableObject {
     /// a rule; `policyEnabled` is a master switch to mute the whole set at once.
     @Published var policyEnabled: Bool { didSet { saveIfLoaded() } }
     @Published var policyRules: [PolicyRule] { didSet { saveIfLoaded() } }
+    /// Optional off-box alerting: POST high-signal events to a webhook (e.g. a
+    /// Telegram admin bot). Off by default; when on, only high-risk /
+    /// out-of-scope events fire unless `alertsAllPrompts` is set.
+    @Published var alertsEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var alertWebhookURL: String { didSet { saveIfLoaded() } }
+    @Published var alertsAllPrompts: Bool { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -178,6 +184,9 @@ final class AppSettings: ObservableObject {
         notchBackgroundHex = "1C1B1A"
         policyEnabled = true
         policyRules = []
+        alertsEnabled = false
+        alertWebhookURL = ""
+        alertsAllPrompts = false
         load()
         loaded = true
     }
@@ -253,6 +262,9 @@ final class AppSettings: ObservableObject {
         var notchBackgroundHex = "1C1B1A"
         var policyEnabled = true
         var policyRules: [PolicyRule] = []
+        var alertsEnabled = false
+        var alertWebhookURL = ""
+        var alertsAllPrompts = false
 
         init() {}
 
@@ -285,6 +297,9 @@ final class AppSettings: ObservableObject {
             notchBackgroundHex = (try? c.decode(String.self, forKey: .notchBackgroundHex)) ?? "1C1B1A"
             policyEnabled = (try? c.decode(Bool.self, forKey: .policyEnabled)) ?? true
             policyRules = (try? c.decode([PolicyRule].self, forKey: .policyRules)) ?? []
+            alertsEnabled = (try? c.decode(Bool.self, forKey: .alertsEnabled)) ?? false
+            alertWebhookURL = (try? c.decode(String.self, forKey: .alertWebhookURL)) ?? ""
+            alertsAllPrompts = (try? c.decode(Bool.self, forKey: .alertsAllPrompts)) ?? false
         }
     }
 
@@ -316,6 +331,9 @@ final class AppSettings: ObservableObject {
         notchBackgroundHex = s.notchBackgroundHex
         policyEnabled = s.policyEnabled
         policyRules = s.policyRules
+        alertsEnabled = s.alertsEnabled
+        alertWebhookURL = s.alertWebhookURL
+        alertsAllPrompts = s.alertsAllPrompts
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -346,6 +364,9 @@ final class AppSettings: ObservableObject {
         s.notchBackgroundHex = notchBackgroundHex
         s.policyEnabled = policyEnabled
         s.policyRules = policyRules
+        s.alertsEnabled = alertsEnabled
+        s.alertWebhookURL = alertWebhookURL
+        s.alertsAllPrompts = alertsAllPrompts
         guard let data = try? JSONEncoder().encode(s) else { return }
         try? data.write(to: URL(fileURLWithPath: path))
     }

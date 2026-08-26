@@ -487,6 +487,7 @@ final class AppModel: ObservableObject {
             }
         }
         pending.append(req)
+        fireAlert(req, breach: breach)
         playPromptSound(for: req)
         if settings.pluginOn("notifications") {
             notifications.post(id: req.id,
@@ -495,6 +496,32 @@ final class AppModel: ObservableObject {
                                highRisk: req.risk.level >= .high || !scopeFlags(req).isEmpty)
         }
         onNewPrompt?()
+    }
+
+    /// Best-effort off-box alert for a surfaced prompt. High-risk / out-of-scope
+    /// only, unless the user opts into every prompt. Never blocks the decision.
+    private func fireAlert(_ req: PermissionRequest, breach: [String]) {
+        guard settings.alertsEnabled, !settings.alertWebhookURL.isEmpty else { return }
+        let highSignal = req.risk.level >= .high || !breach.isEmpty
+        guard settings.alertsAllPrompts || highSignal else { return }
+        let event = AlertEvent(
+            event: "prompt", tool: req.toolName,
+            project: (req.cwd as NSString).lastPathComponent,
+            risk: req.risk.level.label, outOfScope: breach,
+            summary: req.summary, decision: nil,
+            ts: ISO8601DateFormatter().string(from: Date()))
+        AlertNotifier(url: settings.alertWebhookURL).send(event)
+    }
+
+    /// Post a test alert so the webhook can be verified from the dashboard.
+    func sendTestAlert() {
+        guard !settings.alertWebhookURL.isEmpty else { return }
+        let event = AlertEvent(
+            event: "prompt", tool: "Bash", project: "sentrynotch",
+            risk: "danger", outOfScope: ["test.example.com"],
+            summary: "test alert from Sentry Notch", decision: nil,
+            ts: ISO8601DateFormatter().string(from: Date()))
+        AlertNotifier(url: settings.alertWebhookURL).send(event)
     }
 
     /// Distinct pings by risk so a dangerous prompt sounds different from a safe

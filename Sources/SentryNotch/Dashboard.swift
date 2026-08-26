@@ -591,6 +591,42 @@ struct DashboardView: View {
             Text("The permission broker itself is always on — arm it with the Intercept switch in the notch.")
                 .font(.system(size: 10)).foregroundStyle(CC.textFaint)
                 .padding(.top, 2)
+
+            caption("OFF-BOX ALERTS")
+            alertsPanel
+        }
+    }
+
+    private var alertsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            toggleRow("Post alerts to a webhook",
+                      "Ping a URL (e.g. your Telegram admin bot) on high-signal prompts",
+                      $settings.alertsEnabled)
+            HStack(spacing: 8) {
+                Text("URL").font(.system(size: 11)).foregroundStyle(CC.textDim).frame(width: 34, alignment: .leading)
+                TextField("https://…/api/send_admins", text: $settings.alertWebhookURL)
+                    .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(CC.text).padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(CC.surfaceHi))
+            }
+            .disabled(!settings.alertsEnabled).opacity(settings.alertsEnabled ? 1 : 0.5)
+            toggleRow("Alert on every prompt",
+                      "Off (default): only high-risk / out-of-scope prompts fire",
+                      $settings.alertsAllPrompts)
+                .disabled(!settings.alertsEnabled).opacity(settings.alertsEnabled ? 1 : 0.5)
+            HStack {
+                Button { model.sendTestAlert() } label: {
+                    Label("Send test alert", systemImage: "paperplane")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(CC.text)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+                }.buttonStyle(.plain)
+                    .disabled(!settings.alertsEnabled || settings.alertWebhookURL.isEmpty)
+                Spacer()
+            }
+            Text("The alert carries a truncated summary — it leaves your machine, so it never ships a full command or file body.")
+                .font(.system(size: 10)).foregroundStyle(CC.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
