@@ -1264,5 +1264,24 @@ let bare = try! JSONEncoder().encode([PolicyRule(name: "x", effect: .deny, tools
 check(parsePolicyImport(bare)?.count == 1, "a bare rule array imports too")
 check(parsePolicyImport(Data("not json".utf8)) == nil, "garbage import returns nil, not a crash")
 
+// MARK: Policy regression replay
+check(riskLevelFromLabel("danger") == .high && riskLevelFromLabel("caution") == .medium
+      && riskLevelFromLabel("") == .none, "risk labels map back to levels")
+let replayRows = [
+    ReplayRow(tool: "Bash", command: "psql -c 'select 1'", paths: [], risk: .medium, actualOutcome: "allow"),
+    ReplayRow(tool: "Bash", command: "rm -rf /tmp/x", paths: [], risk: .high, actualOutcome: "deny"),
+    ReplayRow(tool: "Read", command: nil, paths: ["/p/README.md"], risk: .none, actualOutcome: "allow"),
+]
+// A rule that denies psql: it would newly-catch the previously-allowed psql call.
+let rep = replayPolicy(rows: replayRows, rules: [PolicyRule(name: "no psql", effect: .deny, tools: ["Bash"], commandRegex: "psql")])
+check(rep.evaluated == 1, "only the psql row matches a psql command-regex rule")
+check(rep.wouldDeny == 1, "the matching call is denied")
+check(rep.newlyCaught == 1, "the previously-allowed psql call is caught")
+check(rep.newlyAllowed == 0, "nothing previously-denied is newly allowed")
+// A broad Bash rule matches both Bash rows.
+let repAll = replayPolicy(rows: replayRows, rules: [PolicyRule(name: "confirm bash", effect: .prompt, tools: ["Bash"])])
+check(repAll.evaluated == 2 && repAll.wouldPrompt == 2, "a tool-only Bash rule matches both Bash rows")
+check(replayPolicy(rows: replayRows, rules: []).evaluated == 0, "no rules matches nothing")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)

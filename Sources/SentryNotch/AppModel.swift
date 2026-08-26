@@ -290,6 +290,21 @@ final class AppModel: ObservableObject {
     /// The current chain head, for anchoring the log off-box.
     func auditHeadMAC() -> String { audit.headMAC() }
 
+    /// Replay a draft policy over history — "what would this have changed?"
+    nonisolated func policyReplayAsync(rules: [PolicyRule]) async -> PolicyReplay {
+        let log = audit
+        return await Task.detached(priority: .utility) {
+            let rows = log.recent(limit: 20_000).map { e -> ReplayRow in
+                let cmd = e.tool == "Bash" ? e.summary : nil
+                let paths = (e.summary.hasPrefix("/") || e.summary.hasPrefix("~")) ? [e.summary] : []
+                let outcome = e.decision.hasPrefix("allow") ? "allow" : "deny"
+                return ReplayRow(tool: e.tool, command: cmd, paths: paths,
+                                 risk: riskLevelFromLabel(e.risk), actualOutcome: outcome)
+            }
+            return replayPolicy(rows: rows, rules: rules)
+        }.value
+    }
+
     /// Deny rules the decision log suggests, computed off the main thread.
     nonisolated func policySuggestionsAsync(existing: [PolicyRule]) async -> [PolicySuggestion] {
         let log = audit

@@ -59,6 +59,8 @@ struct DashboardView: View {
     @State private var stats = AnalyticsSummary()
     @State private var tokens: [Tally] = []
     @State private var policySuggestions: [PolicySuggestion] = []
+    @State private var replay: PolicyReplay?
+    @State private var replaying = false
     @State private var integrity: AuditVerification?
     @State private var integrityLegacy = 0
     @State private var verifying = false
@@ -259,6 +261,48 @@ struct DashboardView: View {
                 .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
             }
             PolicyEditor(settings: settings)
+
+            if !settings.policyRules.isEmpty {
+                caption("REGRESSION TEST")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Replay your decision history against these rules — what would they have changed?")
+                        .font(.system(size: 11)).foregroundStyle(CC.textDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button { runReplay() } label: {
+                            Label(replaying ? "Replaying…" : "Test against history", systemImage: "clock.arrow.circlepath")
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(settings.accentColor))
+                        }.buttonStyle(.plain).disabled(replaying)
+                        Spacer()
+                    }
+                    if let r = replay {
+                        Text("Over **\(r.evaluated)** matched calls: **\(r.wouldDeny)** deny · **\(r.wouldPrompt)** ask · **\(r.wouldAllow)** allow")
+                            .font(.system(size: 11)).foregroundStyle(CC.text)
+                        if r.newlyCaught > 0 {
+                            Label("\(r.newlyCaught) call\(r.newlyCaught == 1 ? "" : "s") you allowed would now be denied — caught", systemImage: "checkmark.shield.fill")
+                                .font(.system(size: 11, weight: .medium)).foregroundStyle(Color(red: 0.35, green: 0.72, blue: 0.5))
+                        }
+                        if r.newlyAllowed > 0 {
+                            Label("\(r.newlyAllowed) call\(r.newlyAllowed == 1 ? "" : "s") you denied would now be allowed — check this", systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
+                        }
+                        Text("Scope and host rules aren't replayable — the log doesn't retain hosts.")
+                            .font(.system(size: 9)).foregroundStyle(CC.textFaint)
+                    }
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+            }
+        }
+    }
+
+    private func runReplay() {
+        replaying = true
+        Task {
+            let r = await model.policyReplayAsync(rules: settings.policyRules)
+            replay = r
+            replaying = false
         }
     }
 
