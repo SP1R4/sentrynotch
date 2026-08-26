@@ -407,6 +407,24 @@ final class AppModel: ObservableObject {
         return flags
     }
 
+    /// Build the facts a policy rule is evaluated against, reusing the analysis
+    /// the permission card already ran (risk, out-of-scope hosts). `hosts` is
+    /// every referenced destination — computed here only when the policy is
+    /// actually active, so the common no-policy path pays nothing.
+    private func policyContext(_ req: PermissionRequest, breach: [String]) -> PolicyContext {
+        let input = req.toolInput
+        var paths: [String] = []
+        for key in ["file_path", "notebook_path", "path"] {
+            if let p = input[key] as? String { paths.append(p) }
+        }
+        let command = input["command"] as? String
+        // Only scan for all hosts if a rule could care about them (a hostGlob).
+        let needsHosts = settings.policyRules.contains { $0.enabled && $0.hostGlob != nil }
+        let hosts = needsHosts ? referencedHosts(texts: scannableTexts(input)) : breach
+        return PolicyContext(tool: req.toolName, paths: paths, command: command,
+                             risk: req.risk.level, hosts: hosts, outOfScopeHosts: breach)
+    }
+
     // MARK: - Incoming permission requests
 
     private func handle(_ req: PermissionRequest) {
@@ -425,7 +443,26 @@ final class AppModel: ObservableObject {
         // out-of-scope call always surfaces, and fail-closed can still deny it
         // at the deadline.
         let breach = scopeFlags(req)
-        if breach.isEmpty {
+
+        // Declarative policy runs before the convenience tiers. An explicit
+        // deny is honoured even out of scope (fail-closed); an explicit allow is
+        // treated like any convenience grant, so a scope breach still surfaces
+        // it; an explicit prompt forces the card open, skipping the auto-allow
+        // tiers below. No matching rule falls through to the existing logic.
+        var forcePrompt = false
+        if settings.policyEnabled, !settings.policyRules.isEmpty,
+           let outcome = evaluatePolicy(policyContext(req, breach: breach), rules: settings.policyRules) {
+            switch outcome.effect {
+            case .deny:
+                finish(req, "deny", "Policy: \(outcome.ruleName)", auto: true); return
+            case .allow:
+                if breach.isEmpty { finish(req, "allow", "Policy: \(outcome.ruleName)", auto: true); return }
+            case .prompt:
+                forcePrompt = true
+            }
+        }
+
+        if !forcePrompt, breach.isEmpty {
             if bypassedSessions.contains(req.sessionID) {
                 finish(req, "allow", "Session bypassed via Sentry Notch", auto: true); return
             }

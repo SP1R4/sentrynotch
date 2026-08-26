@@ -132,7 +132,8 @@ struct DashboardView: View {
     }
 
     enum Tab: String, CaseIterable, Identifiable {
-        case activity = "Activity", rules = "Rules", scope = "Scope", analytics = "Analytics"
+        case activity = "Activity", rules = "Rules", policy = "Policy", scope = "Scope"
+        case analytics = "Analytics"
         case appearance = "Appearance", widgets = "Widgets", plugins = "Plugins"
         var id: String { rawValue }
     }
@@ -147,6 +148,7 @@ struct DashboardView: View {
                     switch tab {
                     case .activity:   activityTab
                     case .rules:      rulesTab
+                    case .policy:     policyTab
                     case .scope:      scopeTab
                     case .appearance: appearanceTab
                     case .widgets:    widgetsTab
@@ -208,6 +210,10 @@ struct DashboardView: View {
         }
         .padding(.vertical, 12)
     }
+
+    // MARK: - Policy
+
+    private var policyTab: some View { PolicyEditor(settings: settings) }
 
     // MARK: - Appearance
 

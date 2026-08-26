@@ -143,6 +143,11 @@ final class AppSettings: ObservableObject {
     /// The notch panel's base colour, and the hex used when it is `.custom`.
     @Published var notchBackground: NotchBackground { didSet { saveIfLoaded() } }
     @Published var notchBackgroundHex: String { didSet { saveIfLoaded() } }
+    /// Declarative allow/deny/prompt policy, evaluated before the auto-allow
+    /// tiers. Empty by default, so existing users are unaffected until they add
+    /// a rule; `policyEnabled` is a master switch to mute the whole set at once.
+    @Published var policyEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var policyRules: [PolicyRule] { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -171,6 +176,8 @@ final class AppSettings: ObservableObject {
         panelTintFromArt = true
         notchBackground = .warmBlack
         notchBackgroundHex = "1C1B1A"
+        policyEnabled = true
+        policyRules = []
         load()
         loaded = true
     }
@@ -244,6 +251,8 @@ final class AppSettings: ObservableObject {
         var panelTintFromArt = true
         var notchBackground = NotchBackground.warmBlack
         var notchBackgroundHex = "1C1B1A"
+        var policyEnabled = true
+        var policyRules: [PolicyRule] = []
 
         init() {}
 
@@ -274,6 +283,8 @@ final class AppSettings: ObservableObject {
             panelTintFromArt = (try? c.decode(Bool.self, forKey: .panelTintFromArt)) ?? true
             notchBackground = (try? c.decode(NotchBackground.self, forKey: .notchBackground)) ?? .warmBlack
             notchBackgroundHex = (try? c.decode(String.self, forKey: .notchBackgroundHex)) ?? "1C1B1A"
+            policyEnabled = (try? c.decode(Bool.self, forKey: .policyEnabled)) ?? true
+            policyRules = (try? c.decode([PolicyRule].self, forKey: .policyRules)) ?? []
         }
     }
 
@@ -303,6 +314,8 @@ final class AppSettings: ObservableObject {
         panelTintFromArt = s.panelTintFromArt
         notchBackground = s.notchBackground
         notchBackgroundHex = s.notchBackgroundHex
+        policyEnabled = s.policyEnabled
+        policyRules = s.policyRules
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -331,6 +344,8 @@ final class AppSettings: ObservableObject {
         s.panelTintFromArt = panelTintFromArt
         s.notchBackground = notchBackground
         s.notchBackgroundHex = notchBackgroundHex
+        s.policyEnabled = policyEnabled
+        s.policyRules = policyRules
         guard let data = try? JSONEncoder().encode(s) else { return }
         try? data.write(to: URL(fileURLWithPath: path))
     }

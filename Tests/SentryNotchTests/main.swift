@@ -1023,5 +1023,60 @@ for b in checkable {
     }
 }
 
+// MARK: Policy engine
+// Glob matching
+check(globMatch(pattern: "**/.ssh/**", path: "/Users/u/.ssh/id_rsa"), "glob ** matches .ssh path")
+check(!globMatch(pattern: "**/.ssh/**", path: "/Users/u/project/main.swift"), "glob ** does not overmatch")
+check(globMatch(pattern: "*.env", path: ".env"), "glob * matches .env")
+check(globMatch(pattern: "src/*.ts", path: "src/pool.ts"), "glob * stays within a segment")
+check(!globMatch(pattern: "src/*.ts", path: "src/db/pool.ts"), "glob * does not cross a segment")
+check(globMatch(pattern: "src/**/*.ts", path: "src/db/pool.ts"), "glob ** crosses segments")
+check(globMatch(pattern: "file?.txt", path: "file1.txt"), "glob ? matches one char")
+check(!globMatch(pattern: "file?.txt", path: "file12.txt"), "glob ? matches exactly one char")
+
+// Rule matching
+let denySSH = PolicyRule(name: "no ssh writes", effect: .deny,
+                         tools: ["Write", "Edit"], pathGlob: "**/.ssh/**")
+check(denySSH.matches(PolicyContext(tool: "Write", paths: ["/Users/u/.ssh/config"])),
+      "ssh-write rule matches a write into .ssh")
+check(!denySSH.matches(PolicyContext(tool: "Write", paths: ["/Users/u/app/x.txt"])),
+      "ssh-write rule ignores an unrelated write")
+check(!denySSH.matches(PolicyContext(tool: "Read", paths: ["/Users/u/.ssh/config"])),
+      "ssh-write rule ignores a Read (wrong tool)")
+
+let highRisk = PolicyRule(name: "high", effect: .prompt, minRisk: .high)
+check(highRisk.matches(PolicyContext(tool: "Bash", risk: .high)), "minRisk matches at threshold")
+check(!highRisk.matches(PolicyContext(tool: "Bash", risk: .medium)), "minRisk rejects below threshold")
+
+let oos = PolicyRule(name: "oos", effect: .prompt, scope: .outOfScope)
+check(oos.matches(PolicyContext(tool: "Bash", outOfScopeHosts: ["evil.com"])), "outOfScope matches when hosts present")
+check(!oos.matches(PolicyContext(tool: "Bash", outOfScopeHosts: [])), "outOfScope rejects when in scope")
+
+let disabled = PolicyRule(name: "off", effect: .deny, enabled: false, tools: ["Bash"])
+check(!disabled.matches(PolicyContext(tool: "Bash")), "a disabled rule never matches")
+
+// Evaluation order — first match wins
+let rules = [
+    PolicyRule(name: "deny ssh", effect: .deny, tools: ["Write"], pathGlob: "**/.ssh/**"),
+    PolicyRule(name: "allow writes", effect: .allow, tools: ["Write"]),
+]
+check(evaluatePolicy(PolicyContext(tool: "Write", paths: ["/Users/u/.ssh/x"]), rules: rules)?.effect == .deny,
+      "specific deny wins over broad allow when ordered first")
+check(evaluatePolicy(PolicyContext(tool: "Write", paths: ["/Users/u/app/x"]), rules: rules)?.effect == .allow,
+      "broad allow applies when the deny doesn't match")
+check(evaluatePolicy(PolicyContext(tool: "Read"), rules: rules) == nil,
+      "no matching rule returns nil so the caller falls back")
+
+// Validation
+check(PolicyRule(name: "bad", effect: .deny, commandRegex: "([").isValid == false, "a broken regex is invalid")
+check(PolicyRule(name: "ok", effect: .deny, commandRegex: "rm -rf").isValid, "a good regex is valid")
+check(PolicyRule(name: "empty", effect: .deny).isUnconditional, "a rule with no conditions is unconditional")
+
+// Round-trips through Codable (persistence)
+let encoded = try! JSONEncoder().encode(starterPolicy())
+let decoded = try! JSONDecoder().decode([PolicyRule].self, from: encoded)
+check(decoded.count == starterPolicy().count, "starter policy round-trips through JSON")
+check(decoded.first?.effect == .deny, "decoded rule keeps its effect")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
