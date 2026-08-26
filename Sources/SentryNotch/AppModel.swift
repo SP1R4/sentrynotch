@@ -636,6 +636,12 @@ final class AppModel: ObservableObject {
     // MARK: - UI actions
 
     func deny(_ req: PermissionRequest) { finish(req, "deny", "Denied from Sentry Notch") }
+
+    /// Deny with an instructive reason the agent receives — steers it toward a
+    /// safer approach instead of just blocking.
+    func denyWithReason(_ req: PermissionRequest, _ reason: String) {
+        finish(req, "deny", reason)
+    }
     func allowOnce(_ req: PermissionRequest) { finish(req, "allow", "Allowed from Sentry Notch") }
 
     func alwaysAllow(_ req: PermissionRequest, source: String = "prompt") {

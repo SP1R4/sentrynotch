@@ -935,6 +935,7 @@ private struct PermissionCard: View {
                 PillButton(title: "Always", key: "⌘3", style: .plain) { model.alwaysAllow(req, source: "Always button") }
                 PillButton(title: "Bypass", key: "⌘4", style: .danger) { model.bypass(req) }
             }
+            steerRow
             trustRow
         }
         .padding(13)
@@ -945,6 +946,25 @@ private struct PermissionCard: View {
     private var borderColor: Color {
         req.risk.level >= .high ? Color.red.opacity(0.55)
             : req.risk.level >= .medium ? Color.orange.opacity(0.45) : CC.coral.opacity(0.45)
+    }
+
+    /// Deny with an instructive reason the agent receives — steering it toward a
+    /// safer approach. The reasons offered are matched to why the call was flagged.
+    private var steerRow: some View {
+        Menu {
+            ForEach(steerReasons(for: req.risk.reasons, outOfScope: !model.scopeFlags(req).isEmpty), id: \.self) { reason in
+                Button(reason) { model.denyWithReason(req, reason) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrowshape.turn.up.backward").font(.system(size: 9))
+                Text("Deny with a reason").font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(CC.textDim)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(CC.surfaceHi))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
     }
 
     /// Time-boxed trust: approve the routine stuff for a few minutes without a

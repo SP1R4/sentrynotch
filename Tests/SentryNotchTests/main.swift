@@ -1283,5 +1283,17 @@ let repAll = replayPolicy(rows: replayRows, rules: [PolicyRule(name: "confirm ba
 check(repAll.evaluated == 2 && repAll.wouldPrompt == 2, "a tool-only Bash rule matches both Bash rows")
 check(replayPolicy(rows: replayRows, rules: []).evaluated == 0, "no rules matches nothing")
 
+// MARK: Steer-the-agent denials
+let steerShell = steerReasons(for: ["pipes a download straight into a shell"], outOfScope: false)
+check(steerShell.contains { $0.lowercased().contains("checksum") }, "a shell-pipe risk suggests a checksum steer")
+let steerScope = steerReasons(for: [], outOfScope: true)
+check(steerScope.first?.lowercased().contains("scope") == true, "out-of-scope puts the scope steer first")
+check(steerReasons(for: [], outOfScope: false) == genericSteerReasons || steerReasons(for: [], outOfScope: false).allSatisfy { genericSteerReasons.contains($0) },
+      "with no specific risk, only the generic steers are offered")
+check(steerReasons(for: ["runs with sudo", "recursive force delete (rm -rf)"], outOfScope: false).count <= 6,
+      "the steer list is capped for the menu")
+check(Set(steerReasons(for: ["sudo", "sudo"], outOfScope: false)).count == steerReasons(for: ["sudo", "sudo"], outOfScope: false).count,
+      "steer reasons are de-duplicated")
+
 print(failures == 0 ? "\nALL PASSED" : "\n\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
