@@ -746,11 +746,11 @@ final class AppModel: ObservableObject {
     func setPanic(_ on: Bool) {
         panic = on
         if on {
-            let waiting = pending
-            pending.removeAll()
-            for req in waiting {
-                req.respond("deny", reason: "Panic stop armed — denied via Sentry Notch")
-                notifications.withdraw(id: req.id)
+            // Route through finish() so each panic-deny is recorded in the audit
+            // log and its caches are cleaned — a manual respond() skipped both.
+            // Iterate a snapshot: finish() removes from `pending` as it goes.
+            for req in Array(pending) {
+                finish(req, "deny", "Panic stop armed — denied via Sentry Notch", auto: true)
             }
             trustWindows.removeAll()          // no auto-approvals survive a panic
             bypassedSessions.removeAll()

@@ -64,7 +64,7 @@ struct RuleStore {
 
     func save(_ state: State) {
         guard let data = try? JSONEncoder().encode(state) else { return }
-        try? data.write(to: URL(fileURLWithPath: path))
+        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }
 
@@ -350,5 +350,7 @@ struct AuditLog: Sendable {
 
     /// The current chain head, for anchoring off-box (an engagement record, a
     /// message to yourself) so adversarial rewrites of the whole log are caught.
-    func headMAC() -> String { chain.lastMAC }
+    /// Read through the write queue: `record()` mutates `chain.lastMAC` there,
+    /// so a bare main-thread read would race it.
+    func headMAC() -> String { queue.sync { chain.lastMAC } }
 }

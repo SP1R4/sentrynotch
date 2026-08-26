@@ -206,22 +206,26 @@ struct PolicyEditor: View {
 
     // MARK: - Bindings into settings.policyRules[i]
 
+    // All bindings are index-guarded: ForEach(indices) + delete/reorder can fire
+    // a stale binding after the array has shrunk, and an unchecked subscript
+    // there is an out-of-range crash.
     private func bool(_ kp: WritableKeyPath<PolicyRule, Bool>, _ i: Int) -> Binding<Bool> {
-        Binding(get: { settings.policyRules[i][keyPath: kp] },
-                set: { settings.policyRules[i][keyPath: kp] = $0 })
+        Binding(get: { settings.policyRules.indices.contains(i) ? settings.policyRules[i][keyPath: kp] : false },
+                set: { if settings.policyRules.indices.contains(i) { settings.policyRules[i][keyPath: kp] = $0 } })
     }
     private func str(_ kp: WritableKeyPath<PolicyRule, String>, _ i: Int) -> Binding<String> {
-        Binding(get: { settings.policyRules[i][keyPath: kp] },
-                set: { settings.policyRules[i][keyPath: kp] = $0 })
+        Binding(get: { settings.policyRules.indices.contains(i) ? settings.policyRules[i][keyPath: kp] : "" },
+                set: { if settings.policyRules.indices.contains(i) { settings.policyRules[i][keyPath: kp] = $0 } })
     }
     private func optStr(_ kp: WritableKeyPath<PolicyRule, String?>, _ i: Int) -> Binding<String> {
-        Binding(get: { settings.policyRules[i][keyPath: kp] ?? "" },
-                set: { settings.policyRules[i][keyPath: kp] = $0.isEmpty ? nil : $0 })
+        Binding(get: { settings.policyRules.indices.contains(i) ? (settings.policyRules[i][keyPath: kp] ?? "") : "" },
+                set: { if settings.policyRules.indices.contains(i) { settings.policyRules[i][keyPath: kp] = $0.isEmpty ? nil : $0 } })
     }
     private func toolsBinding(_ i: Int) -> Binding<String> {
         Binding(
-            get: { (settings.policyRules[i].tools ?? []).joined(separator: ", ") },
+            get: { settings.policyRules.indices.contains(i) ? (settings.policyRules[i].tools ?? []).joined(separator: ", ") : "" },
             set: { s in
+                guard settings.policyRules.indices.contains(i) else { return }
                 let parts = s.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
                 settings.policyRules[i].tools = parts.isEmpty ? nil : parts

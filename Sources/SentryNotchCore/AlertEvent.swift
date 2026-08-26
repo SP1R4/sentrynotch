@@ -26,7 +26,10 @@ public struct AlertEvent: Codable, Sendable, Equatable {
         self.project = project
         self.risk = risk
         self.outOfScope = outOfScope
-        self.summary = summary
+        // Truncate here, not just in `message`: this field is serialized into
+        // the payload, and the whole point is that a full command or file body
+        // never leaves the machine.
+        self.summary = summary.count > 200 ? String(summary.prefix(197)) + "…" : summary
         self.decision = decision
         self.ts = ts
         self.message = AlertEvent.format(event: event, tool: tool, project: project,

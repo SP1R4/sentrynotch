@@ -368,6 +368,9 @@ final class AppSettings: ObservableObject {
         s.alertWebhookURL = alertWebhookURL
         s.alertsAllPrompts = alertsAllPrompts
         guard let data = try? JSONEncoder().encode(s) else { return }
-        try? data.write(to: URL(fileURLWithPath: path))
+        // Atomic: policy-rule and webhook edits save on every keystroke, so a
+        // crash mid-write must not truncate settings.json — a corrupt file
+        // fails the whole-object decode and drops every setting.
+        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }

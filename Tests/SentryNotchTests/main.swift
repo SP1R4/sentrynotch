@@ -1188,7 +1188,13 @@ check(ev.message.contains("evil.com"), "alert message names the out-of-scope hos
 check(ev.jsonData() != nil, "alert encodes to JSON")
 let long = AlertEvent(event: "prompt", tool: "Bash", project: "p", risk: "", outOfScope: [],
     summary: String(repeating: "x", count: 500), decision: nil, ts: "t")
-check(long.message.count < 200, "alert summary is truncated before leaving the box")
+check(long.message.count < 200, "alert message is truncated before leaving the box")
+// Regression: the serialized `summary` field itself must be truncated, not just
+// the display `message` — the payload is what actually leaves the machine.
+check(long.summary.count <= 200, "alert payload summary field is truncated too")
+if let data = long.jsonData(), let s = String(data: data, encoding: .utf8) {
+    check(!s.contains(String(repeating: "x", count: 300)), "full command never appears in the JSON payload")
+}
 let dec = AlertEvent(event: "decision", tool: "Bash", project: "p", risk: "danger",
     outOfScope: [], summary: "rm -rf /", decision: "deny", ts: "t")
 check(dec.message.hasPrefix("DENY"), "a decision event leads with the decision")
