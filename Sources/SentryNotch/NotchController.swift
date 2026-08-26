@@ -180,10 +180,23 @@ final class NotchController: NSObject {
         // Development aid: open and pin the island at launch. Driving a
         // borderless panel that sits above the menu bar with synthetic clicks
         // is unreliable, which has repeatedly blocked verifying UI changes.
+        // Screenshot aid: inject one representative prompt so the island shows a
+        // real permission card for the hero shot.
+        if ProcessInfo.processInfo.environment["\(Brand.slug.uppercased())_DEMO_PROMPT"] == "1" {
+            model.injectScreenshotPrompt()
+        }
+
         if ProcessInfo.processInfo.environment["\(Brand.slug.uppercased())_EXPAND"] == "1" {
             state.pinned = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 self?.setExpanded(true)
+                // Print the island panel's window number so the capture harness
+                // can grab exactly this window with `screencapture -l`.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    guard let self else { return }
+                    print("ISLAND_WINDOW \(self.panel.windowNumber)")
+                    fflush(stdout)
+                }
             }
         }
 

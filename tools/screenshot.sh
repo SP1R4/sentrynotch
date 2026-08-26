@@ -45,6 +45,34 @@ capture_tab() {
     echo "  ✓ assets/$out  (window $wn)"
 }
 
+capture_island() {
+    local out="$1" log="$DEMO/island.log"
+    SENTRYNOTCH_STATE_DIR="$DEMO" \
+    SENTRYNOTCH_SOCK="$DEMO/broker.sock" \
+    SENTRYNOTCH_EXPAND=1 \
+    SENTRYNOTCH_DEMO_PROMPT=1 \
+        "$BIN" >"$log" 2>&1 &
+    local pid=$!
+    local wn=""
+    for _ in $(seq 1 60); do
+        wn=$(grep -m1 ISLAND_WINDOW "$log" 2>/dev/null | awk '{print $2}' || true)
+        [ -n "$wn" ] && break
+        sleep 0.25
+    done
+    if [ -z "$wn" ] || [ "$wn" = "0" ]; then
+        echo "  !! island: no window number — see $log" >&2
+        kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+        return 1
+    fi
+    sleep 1.0
+    screencapture -o -l "$wn" "assets/$out"
+    kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+    echo "  ✓ assets/$out  (window $wn)"
+}
+
+echo "capturing the island…"
+capture_island prompt.png
+
 echo "capturing dashboard tabs…"
 capture_tab activity  activity.png
 capture_tab rules     rules.png
