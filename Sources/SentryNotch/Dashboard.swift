@@ -599,6 +599,10 @@ struct DashboardView: View {
 
             caption("OFF-BOX ALERTS")
             alertsPanel
+
+            caption("HONEYTOKENS")
+            HoneytokenEditor(settings: settings)
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
         }
     }
 

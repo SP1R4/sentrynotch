@@ -459,6 +459,31 @@ final class AppModel: ObservableObject {
         // risk and scope irrelevant.
         if panic { finish(req, "deny", "Panic stop armed — denied via Sentry Notch", auto: true); return }
 
+        // Honeytoken tripwire: touching a decoy is an incident, not a prompt —
+        // deny it and arm the panic brake so nothing else gets through either.
+        if settings.honeytokensEnabled, !settings.honeytokens.isEmpty {
+            var paths: [String] = []
+            for key in ["file_path", "notebook_path", "path"] {
+                if let p = req.toolInput[key] as? String { paths.append(p) }
+            }
+            let tripped = trippedHoneytokens(command: req.toolInput["command"] as? String,
+                                             paths: paths, tokens: settings.honeytokens)
+            if !tripped.isEmpty {
+                let names = tripped.map(\.label).joined(separator: ", ")
+                finish(req, "deny", "Honeytoken tripped: \(names)", auto: true)
+                setPanic(true)
+                showFlash("🍯 Honeytoken tripped (\(names)) — denied and panic armed")
+                if settings.alertsEnabled, !settings.alertWebhookURL.isEmpty {
+                    let ev = AlertEvent(event: "decision", tool: req.toolName,
+                        project: (req.cwd as NSString).lastPathComponent,
+                        risk: "danger", outOfScope: [], summary: "honeytoken tripped: \(names)",
+                        decision: "deny", ts: ISO8601DateFormatter().string(from: Date()))
+                    AlertNotifier(url: settings.alertWebhookURL).send(ev)
+                }
+                return
+            }
+        }
+
         // Scope is the engagement's legal boundary, so it outranks every
         // convenience grant. A stale Always-Allow rule or a session bypass must
         // not be able to wave through a host you aren't cleared to touch — an

@@ -154,6 +154,10 @@ final class AppSettings: ObservableObject {
     @Published var alertsEnabled: Bool { didSet { saveIfLoaded() } }
     @Published var alertWebhookURL: String { didSet { saveIfLoaded() } }
     @Published var alertsAllPrompts: Bool { didSet { saveIfLoaded() } }
+    /// Active deception. Off by default; when armed, a tool call that touches a
+    /// decoy is denied and the panic brake is armed.
+    @Published var honeytokensEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var honeytokens: [Honeytoken] { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -187,6 +191,8 @@ final class AppSettings: ObservableObject {
         alertsEnabled = false
         alertWebhookURL = ""
         alertsAllPrompts = false
+        honeytokensEnabled = false
+        honeytokens = []
         load()
         loaded = true
     }
@@ -265,6 +271,8 @@ final class AppSettings: ObservableObject {
         var alertsEnabled = false
         var alertWebhookURL = ""
         var alertsAllPrompts = false
+        var honeytokensEnabled = false
+        var honeytokens: [Honeytoken] = []
 
         init() {}
 
@@ -300,6 +308,8 @@ final class AppSettings: ObservableObject {
             alertsEnabled = (try? c.decode(Bool.self, forKey: .alertsEnabled)) ?? false
             alertWebhookURL = (try? c.decode(String.self, forKey: .alertWebhookURL)) ?? ""
             alertsAllPrompts = (try? c.decode(Bool.self, forKey: .alertsAllPrompts)) ?? false
+            honeytokensEnabled = (try? c.decode(Bool.self, forKey: .honeytokensEnabled)) ?? false
+            honeytokens = (try? c.decode([Honeytoken].self, forKey: .honeytokens)) ?? []
         }
     }
 
@@ -334,6 +344,8 @@ final class AppSettings: ObservableObject {
         alertsEnabled = s.alertsEnabled
         alertWebhookURL = s.alertWebhookURL
         alertsAllPrompts = s.alertsAllPrompts
+        honeytokensEnabled = s.honeytokensEnabled
+        honeytokens = s.honeytokens
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -367,6 +379,8 @@ final class AppSettings: ObservableObject {
         s.alertsEnabled = alertsEnabled
         s.alertWebhookURL = alertWebhookURL
         s.alertsAllPrompts = alertsAllPrompts
+        s.honeytokensEnabled = honeytokensEnabled
+        s.honeytokens = honeytokens
         guard let data = try? JSONEncoder().encode(s) else { return }
         // Atomic: policy-rule and webhook edits save on every keystroke, so a
         // crash mid-write must not truncate settings.json — a corrupt file
