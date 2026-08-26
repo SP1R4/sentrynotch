@@ -105,8 +105,13 @@ policy = [
     {"id": uid(), "name": "Auto-allow reads in repo", "effect": "allow",
      "enabled": True, "tools": ["Read", "Grep"]},
 ]
+# Widgets off so the island hero shot is just the toolbar + the permission
+# card — no widget row, and (with the session list off) no real session data.
+widgets = {w: False for w in ["usage", "sessions", "approveSafe", "activity",
+           "timer", "spotify", "headroom", "repo", "vitals", "fleet"]}
 open(os.path.join(d, "settings.json"), "w").write(json.dumps({
     "accent": "coral", "policyEnabled": True, "policyRules": policy,
+    "widgets": widgets,
 }))
 print("seeded", d)
 PY

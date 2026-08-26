@@ -13,9 +13,9 @@
 
 <br/>
 
-<img src="assets/deny-flow.gif" width="760" alt="A risky command arrives — a download piped into sudo — and is denied in one click from the notch." />
+<img src="assets/prompt.png" width="760" alt="The notch island showing a risky command — a download piped into sudo — with the risk spelled out and four decision buttons." />
 
-<sub><i>A curl-into-sudo lands mid-session. The notch opens, the risk is spelled out, and it's denied — without leaving the terminal.</i></sub>
+<sub><i>A curl-into-sudo lands mid-session. The notch opens, the risk is spelled out, and it's one keystroke from denied — without leaving the terminal.</i></sub>
 
 </div>
 
