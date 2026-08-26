@@ -686,7 +686,38 @@ struct DashboardView: View {
             caption("HONEYTOKENS")
             HoneytokenEditor(settings: settings)
                 .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+
+            caption("TOKEN GOVERNOR")
+            tokenGovernorPanel
         }
+    }
+
+    private var tokenGovernorPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            toggleRow("Warn on a token budget",
+                      "Alert when a session's context tokens cross the ceiling",
+                      $settings.tokenGuardEnabled)
+            HStack(spacing: 8) {
+                Text("Budget").font(.system(size: 11)).foregroundStyle(CC.textDim)
+                Menu {
+                    ForEach([200_000, 500_000, 800_000, 1_000_000, 1_500_000, 2_000_000], id: \.self) { b in
+                        Button("\(b / 1000)k tokens") { settings.tokenBudget = b }
+                    }
+                } label: {
+                    Text("\(settings.tokenBudget / 1000)k tokens")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(CC.text)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(CC.surfaceHi))
+                }.menuStyle(.borderlessButton).fixedSize()
+                Spacer()
+            }
+            .disabled(!settings.tokenGuardEnabled).opacity(settings.tokenGuardEnabled ? 1 : 0.5)
+            toggleRow("Auto-arm panic when exceeded",
+                      "Off (default): warn only. On: crossing the budget denies everything until you release.",
+                      $settings.tokenGuardPanics)
+                .disabled(!settings.tokenGuardEnabled).opacity(settings.tokenGuardEnabled ? 1 : 0.5)
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
     }
 
     private var alertsPanel: some View {

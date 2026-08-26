@@ -993,8 +993,34 @@ final class AppModel: ObservableObject {
         lifecycle[card.id] == nil
     }
 
+    /// Sessions that have already tripped the token budget, so it fires once
+    /// per session rather than on every refresh.
+    private var tokenGuardFired = Set<String>()
+
+    /// Alert (and optionally panic) when a session's context tokens cross the
+    /// budget. One-shot per session; forgets sessions that end.
+    private func checkTokenBudget(_ cards: [SessionCard]) {
+        guard settings.tokenGuardEnabled, settings.tokenBudget > 0 else { return }
+        let liveIDs = Set(cards.map(\.id))
+        tokenGuardFired.formIntersection(liveIDs)   // forget ended sessions
+        for card in cards where card.tokens >= settings.tokenBudget && !tokenGuardFired.contains(card.id) {
+            tokenGuardFired.insert(card.id)
+            let k = card.tokens / 1000
+            showFlash("💸 \(card.project): \(k)k tokens — over the \(settings.tokenBudget / 1000)k budget")
+            NSSound(named: "Funk")?.play()
+            if settings.alertsEnabled, !settings.alertWebhookURL.isEmpty {
+                let ev = AlertEvent(event: "decision", tool: "budget", project: card.project,
+                    risk: "caution", outOfScope: [], summary: "\(k)k tokens over budget",
+                    decision: nil, ts: ISO8601DateFormatter().string(from: Date()))
+                AlertNotifier(url: settings.alertWebhookURL).send(ev)
+            }
+            if settings.tokenGuardPanics { setPanic(true) }
+        }
+    }
+
     private func applySessions(_ cards: [SessionCard], force: Bool = false) {
         monitorCards = cards
+        checkTokenBudget(cards)
         let next: [SessionCard] = cards.compactMap { card in
             let live = resumed(card)
             if !live, lifecycle[card.id]?.ended == true { return nil }

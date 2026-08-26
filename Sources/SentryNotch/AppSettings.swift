@@ -158,6 +158,11 @@ final class AppSettings: ObservableObject {
     /// decoy is denied and the panic brake is armed.
     @Published var honeytokensEnabled: Bool { didSet { saveIfLoaded() } }
     @Published var honeytokens: [Honeytoken] { didSet { saveIfLoaded() } }
+    /// Token/cost governor. Off by default; alerts when a session's context
+    /// tokens cross the budget, and can auto-arm panic if `tokenGuardPanics`.
+    @Published var tokenGuardEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var tokenBudget: Int { didSet { saveIfLoaded() } }
+    @Published var tokenGuardPanics: Bool { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -193,6 +198,9 @@ final class AppSettings: ObservableObject {
         alertsAllPrompts = false
         honeytokensEnabled = false
         honeytokens = []
+        tokenGuardEnabled = false
+        tokenBudget = 800_000
+        tokenGuardPanics = false
         load()
         loaded = true
     }
@@ -273,6 +281,9 @@ final class AppSettings: ObservableObject {
         var alertsAllPrompts = false
         var honeytokensEnabled = false
         var honeytokens: [Honeytoken] = []
+        var tokenGuardEnabled = false
+        var tokenBudget = 800_000
+        var tokenGuardPanics = false
 
         init() {}
 
@@ -310,6 +321,9 @@ final class AppSettings: ObservableObject {
             alertsAllPrompts = (try? c.decode(Bool.self, forKey: .alertsAllPrompts)) ?? false
             honeytokensEnabled = (try? c.decode(Bool.self, forKey: .honeytokensEnabled)) ?? false
             honeytokens = (try? c.decode([Honeytoken].self, forKey: .honeytokens)) ?? []
+            tokenGuardEnabled = (try? c.decode(Bool.self, forKey: .tokenGuardEnabled)) ?? false
+            tokenBudget = (try? c.decode(Int.self, forKey: .tokenBudget)) ?? 800_000
+            tokenGuardPanics = (try? c.decode(Bool.self, forKey: .tokenGuardPanics)) ?? false
         }
     }
 
@@ -346,6 +360,9 @@ final class AppSettings: ObservableObject {
         alertsAllPrompts = s.alertsAllPrompts
         honeytokensEnabled = s.honeytokensEnabled
         honeytokens = s.honeytokens
+        tokenGuardEnabled = s.tokenGuardEnabled
+        tokenBudget = s.tokenBudget
+        tokenGuardPanics = s.tokenGuardPanics
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -381,6 +398,9 @@ final class AppSettings: ObservableObject {
         s.alertsAllPrompts = alertsAllPrompts
         s.honeytokensEnabled = honeytokensEnabled
         s.honeytokens = honeytokens
+        s.tokenGuardEnabled = tokenGuardEnabled
+        s.tokenBudget = tokenBudget
+        s.tokenGuardPanics = tokenGuardPanics
         guard let data = try? JSONEncoder().encode(s) else { return }
         // Atomic: policy-rule and webhook edits save on every keystroke, so a
         // crash mid-write must not truncate settings.json — a corrupt file
