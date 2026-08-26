@@ -26,3 +26,7 @@ web/worker/.dev.vars
 
 # The public repo is published separately and must never carry the source.
 public-repo/
+
+# Python bytecode cache (from syntax-checking the hooks)
+__pycache__/
+*.pyc
