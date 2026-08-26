@@ -29,12 +29,15 @@ enum CC {
     static let alarm = Color(red: 0.90, green: 0.28, blue: 0.24)     // high-risk red
     static let ink = Color(red: 0.11, green: 0.105, blue: 0.10)      // warm near-black
     static let inkTop = Color(red: 0.04, green: 0.038, blue: 0.035)  // blends into the notch
-    static let surface = Color(red: 1, green: 0.98, blue: 0.96).opacity(0.055)
-    static let surfaceHi = Color(red: 1, green: 0.98, blue: 0.96).opacity(0.09)
-    static let text = Color(red: 0.96, green: 0.95, blue: 0.92)
-    static let textDim = Color(red: 0.96, green: 0.95, blue: 0.92).opacity(0.55)
-    static let textFaint = Color(red: 0.96, green: 0.95, blue: 0.92).opacity(0.32)
-    static let hairline = Color(red: 1, green: 0.98, blue: 0.96).opacity(0.09)
+    // Slightly lifted from the original values so cards, dividers, and dim
+    // text read clearly on the near-black panel instead of sinking into it —
+    // a legibility pass, still comfortably below "bright".
+    static let surface = Color(red: 1, green: 0.98, blue: 0.96).opacity(0.07)
+    static let surfaceHi = Color(red: 1, green: 0.98, blue: 0.96).opacity(0.115)
+    static let text = Color(red: 0.97, green: 0.96, blue: 0.93)
+    static let textDim = Color(red: 0.97, green: 0.96, blue: 0.93).opacity(0.64)
+    static let textFaint = Color(red: 0.97, green: 0.96, blue: 0.93).opacity(0.42)
+    static let hairline = Color(red: 1, green: 0.98, blue: 0.96).opacity(0.13)
 
     /// Panel fill: pure-ish black at the very top so it fuses with the physical
     /// notch, warming into `ink` as it drops down.
@@ -355,10 +358,21 @@ struct Sentinel: View {
         let px = size / CGFloat(Self.cols)
         let pad = size * 0.12
         return Canvas { ctx, _ in
-            ctx.translateBy(x: pad + dx, y: pad + dy)
+            // Only the animation offset translates; the pixel grid itself is
+            // snapped to whole points below. Filling fractional rects smeared
+            // every block edge across a sub-pixel boundary, which read as a
+            // muddy blur at these small sizes.
+            ctx.translateBy(x: dx, y: dy)
+            func snap(_ v: CGFloat) -> CGFloat { v.rounded() }
             for (y, row) in rows.enumerated() {
                 for (x, ch) in row.enumerated() where ch == "X" {
-                    ctx.fill(Path(CGRect(x: CGFloat(x) * px, y: CGFloat(y) * px, width: px, height: px)),
+                    // Snap each cell's edges to whole points. Neighbouring cells
+                    // share the same snapped edge, so blocks meet cleanly with
+                    // no seams and no anti-aliased fuzz.
+                    let x0 = snap(pad + CGFloat(x) * px), y0 = snap(pad + CGFloat(y) * px)
+                    let x1 = snap(pad + CGFloat(x + 1) * px), y1 = snap(pad + CGFloat(y + 1) * px)
+                    ctx.fill(Path(CGRect(x: x0, y: y0,
+                                         width: max(1, x1 - x0), height: max(1, y1 - y0))),
                              with: .color(color))
                 }
             }

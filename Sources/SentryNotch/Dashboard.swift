@@ -1151,16 +1151,27 @@ struct DashboardView: View {
 
     private var sparkline: some View {
         let days = last14Days
-        let peak = max(1, days.map { $0.count }.max() ?? 1)
+        let peakDay = days.max { $0.count < $1.count }
+        let peak = max(1, peakDay?.count ?? 1)
         return VStack(spacing: 6) {
+            // Peak read-out, so the tallest bar has a number without hovering.
+            HStack {
+                Spacer()
+                Text("peak ")
+                    .font(.system(size: 10)).foregroundStyle(CC.textDim)
+                + Text("\(peak)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(settings.accentColor)
+            }
             HStack(alignment: .bottom, spacing: 4) {
                 ForEach(days) { (d: Tally) in
-                    let h: CGFloat = d.count == 0 ? 2 : max(4, 44 * CGFloat(d.count) / CGFloat(peak))
-                    RoundedRectangle(cornerRadius: 2)
+                    let h: CGFloat = d.count == 0 ? 3 : max(6, 44 * CGFloat(d.count) / CGFloat(peak))
+                    RoundedRectangle(cornerRadius: 2.5)
                         // Reserve the saturated accent for the busiest day; the
-                        // rest sit back, and empty days are a faint baseline tick.
+                        // rest sit back but stay legible, and empty days are a
+                        // faint baseline tick.
                         .fill(d.count == 0 ? CC.textFaint
-                              : settings.accentColor.opacity(d.count == peak ? 0.9 : 0.5))
+                              : settings.accentColor.opacity(d.count == peak ? 0.95 : 0.62))
                         .frame(maxWidth: 26)
                         .frame(height: h)
                         .frame(maxWidth: .infinity)
@@ -1194,7 +1205,7 @@ struct DashboardView: View {
                     GeometryReader { geo in
                         // Busiest row saturated, the rest dimmed — a hierarchy
                         // rather than one flat wall of coral.
-                        Capsule().fill(settings.accentColor.opacity(it.count == peak ? 0.85 : 0.4))
+                        Capsule().fill(settings.accentColor.opacity(it.count == peak ? 0.9 : 0.55))
                             .frame(width: max(3, geo.size.width * CGFloat(it.count) / CGFloat(peak)))
                     }
                     .frame(height: 8)
@@ -1209,8 +1220,8 @@ struct DashboardView: View {
 
     private func stat(_ value: String, _ label: String, _ tint: Color = CC.text) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(tint)
-            Text(label).font(.system(size: 9)).foregroundStyle(CC.textDim).lineLimit(1)
+            Text(value).font(.system(size: 19, weight: .bold, design: .rounded)).foregroundStyle(tint)
+            Text(label).font(.system(size: 10)).foregroundStyle(CC.textDim).lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
@@ -1221,7 +1232,8 @@ struct DashboardView: View {
     // MARK: - Pieces
 
     private func caption(_ s: String) -> some View {
-        Text(s).font(.system(size: 9, weight: .bold)).foregroundStyle(CC.textFaint).padding(.top, 2)
+        Text(s).font(.system(size: 10, weight: .bold)).tracking(0.4)
+            .foregroundStyle(CC.textDim).padding(.top, 2)
     }
 
     private func toggleRow(_ title: String, _ detail: String, _ binding: Binding<Bool>) -> some View {
