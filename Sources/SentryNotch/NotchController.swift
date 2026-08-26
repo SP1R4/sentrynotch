@@ -187,6 +187,19 @@ final class NotchController: NSObject {
             }
         }
 
+        // Screenshot aid: open the dashboard (on the tab from SENTRYNOTCH_TAB)
+        // and print its window number so the capture harness can grab exactly
+        // this window with `screencapture -l`.
+        if ProcessInfo.processInfo.environment["\(Brand.slug.uppercased())_DASHBOARD"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.dashboard.show()
+                if let n = self?.dashboard.windowNumber {
+                    print("DASHBOARD_WINDOW \(n)")
+                    fflush(stdout)
+                }
+            }
+        }
+
         // When a popover closes, re-evaluate: the pointer may have left the
         // panel while it was open, so the island should collapse now rather
         // than hang around until the next hover event.

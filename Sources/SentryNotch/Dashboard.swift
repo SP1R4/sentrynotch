@@ -13,6 +13,11 @@ final class DashboardWindowController {
 
     init(model: AppModel) { self.model = model }
 
+    /// CoreGraphics window number of the open dashboard, or nil. Used by the
+    /// screenshot harness (`SENTRYNOTCH_DASHBOARD=1`) to grab exactly this
+    /// window with `screencapture -l`.
+    var windowNumber: Int? { window?.windowNumber }
+
     func show() {
         if let window {
             window.makeKeyAndOrderFront(nil)

@@ -65,11 +65,15 @@ questions that actually matter when you're writing up what an agent did.
 <table>
 <tr>
 <td width="50%"><img src="assets/island.png" alt="The notch island with a pending prompt" /><br/><sub><b>The island</b> — prompts, risk, and live sessions.</sub></td>
-<td width="50%"><img src="assets/rules.png" alt="Always-allow rules" /><br/><sub><b>Rules</b> — the always-allow decisions you've made.</sub></td>
+<td width="50%"><img src="assets/policy.png" alt="The policy engine editor" /><br/><sub><b>Policy</b> — allow / deny / ask rules, checked before auto-allow.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="assets/activity.png" alt="Per-session activity feed" /><br/><sub><b>Activity</b> — the decision log, browsable.</sub></td>
 <td width="50%"><img src="assets/analytics.png" alt="Usage analytics" /><br/><sub><b>Analytics</b> — how much, by tool, over time.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/rules.png" alt="Always-allow rules" /><br/><sub><b>Rules</b> — the always-allow decisions you've made.</sub></td>
+<td width="50%"></td>
 </tr>
 </table>
 </div>
