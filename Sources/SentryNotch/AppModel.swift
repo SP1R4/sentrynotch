@@ -46,6 +46,11 @@ final class AppModel: ObservableObject {
     /// a "for the next few minutes" convenience, so it should never survive a
     /// restart. Expired windows are swept in `tick()`.
     @Published var trustWindows: [TrustWindow] = []
+    /// Panic stop: when armed, every intercepted tool call is denied outright —
+    /// the emergency brake for an agent going sideways. In-memory only.
+    @Published var panic = false
+    /// A brief status line shown in the expanded island after a panic action.
+    @Published var flash: String?
     @Published var bypassedSessions: Set<String> = []
     @Published var expandedSessionID: String? = nil
     @Published var activity: [ActivityItem] = []
@@ -450,6 +455,10 @@ final class AppModel: ObservableObject {
                          defaultOn: interceptNewSessions,
                          session: armingFor(req.sessionID)) else { req.respond("ask"); return }
 
+        // Panic stop outranks everything: an armed brake denies every call,
+        // risk and scope irrelevant.
+        if panic { finish(req, "deny", "Panic stop armed — denied via Sentry Notch", auto: true); return }
+
         // Scope is the engagement's legal boundary, so it outranks every
         // convenience grant. A stale Always-Allow rule or a session bypass must
         // not be able to wave through a host you aren't cleared to touch — an
@@ -729,6 +738,66 @@ final class AppModel: ObservableObject {
     }
 
     func revokeTrust(_ id: UUID) { trustWindows.removeAll { $0.id == id } }
+
+    // MARK: - Panic controls
+
+    /// Arm/disarm the panic stop. Arming immediately denies everything already
+    /// waiting, so a runaway agent is halted at once rather than at each prompt.
+    func setPanic(_ on: Bool) {
+        panic = on
+        if on {
+            let waiting = pending
+            pending.removeAll()
+            for req in waiting {
+                req.respond("deny", reason: "Panic stop armed — denied via Sentry Notch")
+                notifications.withdraw(id: req.id)
+            }
+            trustWindows.removeAll()          // no auto-approvals survive a panic
+            bypassedSessions.removeAll()
+            showFlash("Panic stop armed — all calls will be denied")
+            NSSound(named: "Sosumi")?.play()
+        } else {
+            showFlash("Panic stop released")
+        }
+    }
+
+    /// Stash a project's uncommitted working changes — a *recoverable* undo of
+    /// what an agent just wrote. `git stash` keeps the changes (restore with
+    /// `git stash pop`), so this never destroys work; a runaway edit spree can
+    /// be shelved in one action and inspected later.
+    func stashSession(cwd: String, project: String) {
+        guard !cwd.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            p.arguments = ["git", "-C", cwd, "stash", "push", "-u", "-m", "sentrynotch panic \(stamp)"]
+            p.environment = ["PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"]
+            let out = Pipe(); p.standardOutput = out; p.standardError = out
+            let text: String
+            do {
+                try p.run()
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                let o = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                text = p.terminationStatus == 0
+                    ? (o.contains("No local changes") ? "\(project): nothing to stash" : "\(project): changes stashed (git stash pop to restore)")
+                    : "\(project): stash failed — not a git repo?"
+            } catch {
+                text = "\(project): stash failed to run"
+            }
+            Task { @MainActor [weak self] in self?.showFlash(text) }
+        }
+    }
+
+    /// Show a transient status line, auto-clearing after a few seconds.
+    private func showFlash(_ text: String) {
+        flash = text
+        let token = text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            if self?.flash == token { self?.flash = nil }
+        }
+    }
 
     func injectDemoPrompt() {
         let req = PermissionRequest(

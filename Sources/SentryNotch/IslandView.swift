@@ -83,6 +83,26 @@ struct IslandView: View {
                 ScrollView {
                     VStack(spacing: 8) {
                         WidgetRow(model: model, state: state)
+                        if model.panic {
+                            HStack(spacing: 6) {
+                                Image(systemName: "hand.raised.fill").font(.system(size: 11))
+                                Text("Panic stop armed — every tool call is being denied").font(.system(size: 11, weight: .semibold))
+                                Spacer()
+                                Button("Release") { model.setPanic(false) }
+                                    .buttonStyle(.plain).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                            }
+                            .foregroundStyle(.white).padding(.horizontal, 9).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.85)))
+                        }
+                        if let flash = model.flash {
+                            HStack(spacing: 6) {
+                                Image(systemName: "info.circle").font(.system(size: 10))
+                                Text(flash).font(.system(size: 10)).fixedSize(horizontal: false, vertical: true)
+                                Spacer()
+                            }
+                            .foregroundStyle(CC.textDim).padding(.horizontal, 9).padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+                        }
                         if !model.trustWindows.isEmpty { TrustStrip(model: model) }
                         if model.pending.count > 1 && model.settings.widgetOn("approveSafe") {
                             Button(action: model.approveAllSafe) {
@@ -110,6 +130,7 @@ struct IslandView: View {
                                                onRevoke: { model.revokeBypass(card.id) },
                                                onSetPolicy: { model.setPolicy($0, for: card.cwd) },
                                                onSetArming: { model.setArming($0, for: card.id) },
+                                               onStash: { model.stashSession(cwd: card.cwd, project: card.project) },
                                                onInterrupt: model.canInterrupt(card) ? { model.interrupt(card) } : nil,
                                                ambiguous: model.sessions.filter { $0.project == card.project }.count > 1)
                                     if model.expandedSessionID == card.id && model.settings.widgetOn("activity") {
@@ -653,6 +674,16 @@ private struct TopStrip: View {
                         .help("Fetch real 5h/7d reset — makes one cheap Claude call")
                 }
             }
+            Button { model.setPanic(!model.panic) } label: {
+                Image(systemName: model.panic ? "hand.raised.fill" : "hand.raised")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(model.panic ? .white : Color.red)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(Capsule().fill(model.panic ? Color.red : Color.red.opacity(0.16)))
+            }
+            .buttonStyle(.plain)
+            .help(model.panic ? "Panic stop is ARMED — every call is denied. Click to release."
+                              : "Panic stop — deny every tool call until released")
             HStack(spacing: 3) {
                 Text("intercept").font(.system(size: 9, weight: .medium)).foregroundStyle(CC.textFaint)
                 SwitchToggle(isOn: $model.interceptEnabled, tint: model.settings.accentColor)
@@ -1281,6 +1312,7 @@ private struct SessionRow: View {
     var onRevoke: () -> Void
     var onSetPolicy: (ProjectPolicy) -> Void
     var onSetArming: (SessionArming) -> Void
+    var onStash: () -> Void
     var onInterrupt: (() -> Void)?
     /// True when another visible card shares this card's project name. The
     /// project label alone (the cwd's basename) can't tell two sessions in the
@@ -1372,6 +1404,10 @@ private struct SessionRow: View {
                 } label: {
                     Label(a.label, systemImage: arming == a ? "checkmark" : "")
                 }
+            }
+            Divider()
+            Button { onStash() } label: {
+                Label("Stash working changes (recoverable)", systemImage: "arrow.uturn.backward")
             }
         }
     }
