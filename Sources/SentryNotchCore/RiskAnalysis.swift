@@ -32,6 +32,7 @@ public func analyzeRisk(toolName: String, input: [String: Any], cwd: String) -> 
 
     if toolName == "Bash", let cmd = input["command"] as? String {
         reasons += bashRisks(cmd)
+        reasons += exfilRisks(command: cmd)   // data leaving the box
     }
 
     // File writes/edits outside the session's working directory.
@@ -43,10 +44,35 @@ public func analyzeRisk(toolName: String, input: [String: Any], cwd: String) -> 
         if looksSensitive(path: path) {
             reasons.append((.high, "touches a sensitive path (\(abbrev(path)))"))
         }
+        // Supply-chain: a new dependency introduced into a project manifest.
+        let added = addedText(toolName: toolName, input: input)
+        if !added.isEmpty {
+            let deps = addedDependencies(path: path, addedText: added)
+            if !deps.isEmpty {
+                reasons.append((.medium, "adds a dependency (\(deps.joined(separator: ", ")))"))
+            }
+        }
     }
 
     let level = reasons.map(\.0).max() ?? .none
     return RiskReport(level: level, reasons: reasons.map(\.1))
+}
+
+/// The text a write/edit *introduces*, so dependency detection sees additions
+/// rather than the whole file. `Write` has no prior state, so its full content
+/// counts as added; `Edit`/`MultiEdit` contribute their `new_string`s.
+func addedText(toolName: String, input: [String: Any]) -> String {
+    switch toolName {
+    case "Write":
+        return (input["content"] as? String) ?? ""
+    case "Edit":
+        return (input["new_string"] as? String) ?? ""
+    case "MultiEdit":
+        guard let edits = input["edits"] as? [[String: Any]] else { return "" }
+        return edits.compactMap { $0["new_string"] as? String }.joined(separator: "\n")
+    default:
+        return ""
+    }
 }
 
 // MARK: - Bash heuristics
