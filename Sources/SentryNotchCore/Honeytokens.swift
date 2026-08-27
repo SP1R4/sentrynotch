@@ -32,22 +32,28 @@ public func trippedHoneytokens(command: String?, paths: [String],
     for t in tokens {
         let base = t.basename
         guard !base.isEmpty else { continue }
+        // A token WITH a path component names one specific file — match it
+        // exactly, so a decoy at /honeypot/.env never trips on the project's
+        // real .env of the same name. A BARE filename is meant to match
+        // anywhere, so it matches by basename.
+        let isPathToken = t.path.contains("/")
         var hit = false
 
-        // Referenced file paths (Read/Write/Edit file_path, etc.).
-        for p in paths {
-            let ep = (p as NSString).expandingTildeInPath
-            if ep == t.expanded || ep.hasSuffix("/" + t.expanded)
-                || (p as NSString).lastPathComponent == base {
-                hit = true
-                break
+        if isPathToken {
+            let target = URL(fileURLWithPath: t.expanded).standardizedFileURL.path
+            for p in paths {
+                let ep = URL(fileURLWithPath: (p as NSString).expandingTildeInPath).standardizedFileURL.path
+                if ep == target { hit = true; break }
             }
-        }
-
-        // The basename appearing as a whole word in a Bash command.
-        if !hit, let cmd = command, !cmd.isEmpty {
-            let pattern = "(^|[^A-Za-z0-9._-])" + NSRegularExpression.escapedPattern(for: base) + "($|[^A-Za-z0-9._-])"
-            if cmd.range(of: pattern, options: .regularExpression) != nil { hit = true }
+            // A command referencing the decoy by its full path also trips it.
+            if !hit, let cmd = command, cmd.contains(t.expanded) || cmd.contains(t.path) { hit = true }
+        } else {
+            for p in paths where (p as NSString).lastPathComponent == base { hit = true; break }
+            // The basename as a whole word in a Bash command.
+            if !hit, let cmd = command, !cmd.isEmpty {
+                let pattern = "(^|[^A-Za-z0-9._-])" + NSRegularExpression.escapedPattern(for: base) + "($|[^A-Za-z0-9._-])"
+                if cmd.range(of: pattern, options: .regularExpression) != nil { hit = true }
+            }
         }
 
         if hit { tripped.append(t) }

@@ -1228,8 +1228,15 @@ check(trippedHoneytokens(command: "echo prod-root.pemx", paths: [], tokens: hts)
       "a substring that isn't a whole-word match does not trip")
 check(trippedHoneytokens(command: "cat x", paths: [], tokens: []).isEmpty,
       "no honeytokens configured never trips")
-check(trippedHoneytokens(command: nil, paths: ["/Users/u/proj/config/.env.prod"], tokens: hts).isEmpty == false,
-      "a path suffix match trips the decoy")
+// Regression: a full-path decoy must NOT trip on a different file that merely
+// shares its basename — that would false-panic on a legit read.
+check(trippedHoneytokens(command: nil, paths: ["/Users/u/other/.env.prod"], tokens: hts).isEmpty,
+      "a full-path decoy does not trip on a same-name file elsewhere")
+check(trippedHoneytokens(command: "cat /Users/u/proj/.env.prod", paths: [], tokens: hts).isEmpty == false,
+      "a full-path decoy trips when its exact path is in the command")
+// A BARE-filename decoy is meant to match anywhere by basename.
+check(trippedHoneytokens(command: nil, paths: ["/tmp/loot/prod-root.pem"], tokens: hts).isEmpty == false,
+      "a bare-filename decoy trips by basename in any path")
 check(starterHoneytokenFiles().count == 3, "starter bait set is present")
 
 // MARK: Learned policy suggestions
