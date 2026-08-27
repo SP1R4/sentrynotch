@@ -541,6 +541,14 @@ final class AppModel: ObservableObject {
         // at the deadline.
         let breach = scopeFlags(req)
 
+        // Scope enforcement: when armed, an out-of-scope call is denied outright
+        // rather than surfaced. Scope is the engagement's legal boundary, so
+        // this outranks the policy engine and every convenience grant.
+        if settings.scopeEnforce, !breach.isEmpty {
+            finish(req, "deny", "Out of engagement scope — auto-denied (\(breach.joined(separator: ", ")))", auto: true)
+            return
+        }
+
         // Declarative policy runs before the convenience tiers. An explicit
         // deny is honoured even out of scope (fail-closed); an explicit allow is
         // treated like any convenience grant, so a scope breach still surfaces

@@ -167,6 +167,10 @@ final class AppSettings: ObservableObject {
     /// high-risk or out-of-scope call — so the dangerous ones can't be waved
     /// through with a single reflexive click. Off by default.
     @Published var dualApprovalEnabled: Bool { didSet { saveIfLoaded() } }
+    /// Scope enforcement: auto-deny any out-of-scope call outright, rather than
+    /// only flagging it. Permission-layer only (no network/pf changes). Off by
+    /// default — the scope guard flags but doesn't block until you arm this.
+    @Published var scopeEnforce: Bool { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -206,6 +210,7 @@ final class AppSettings: ObservableObject {
         tokenBudget = 800_000
         tokenGuardPanics = false
         dualApprovalEnabled = false
+        scopeEnforce = false
         load()
         loaded = true
     }
@@ -290,6 +295,7 @@ final class AppSettings: ObservableObject {
         var tokenBudget = 800_000
         var tokenGuardPanics = false
         var dualApprovalEnabled = false
+        var scopeEnforce = false
 
         init() {}
 
@@ -331,6 +337,7 @@ final class AppSettings: ObservableObject {
             tokenBudget = (try? c.decode(Int.self, forKey: .tokenBudget)) ?? 800_000
             tokenGuardPanics = (try? c.decode(Bool.self, forKey: .tokenGuardPanics)) ?? false
             dualApprovalEnabled = (try? c.decode(Bool.self, forKey: .dualApprovalEnabled)) ?? false
+            scopeEnforce = (try? c.decode(Bool.self, forKey: .scopeEnforce)) ?? false
         }
     }
 
@@ -371,6 +378,7 @@ final class AppSettings: ObservableObject {
         tokenBudget = s.tokenBudget
         tokenGuardPanics = s.tokenGuardPanics
         dualApprovalEnabled = s.dualApprovalEnabled
+        scopeEnforce = s.scopeEnforce
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -410,6 +418,7 @@ final class AppSettings: ObservableObject {
         s.tokenBudget = tokenBudget
         s.tokenGuardPanics = tokenGuardPanics
         s.dualApprovalEnabled = dualApprovalEnabled
+        s.scopeEnforce = scopeEnforce
         guard let data = try? JSONEncoder().encode(s) else { return }
         // Atomic: policy-rule and webhook edits save on every keystroke, so a
         // crash mid-write must not truncate settings.json — a corrupt file

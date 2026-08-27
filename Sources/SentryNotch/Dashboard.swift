@@ -669,6 +669,9 @@ struct DashboardView: View {
             toggleRow("Dual control on dangerous allows",
                       "Require a second confirmation to allow a high-risk or out-of-scope call",
                       $settings.dualApprovalEnabled)
+            toggleRow("Enforce scope (auto-deny out-of-scope)",
+                      "Off: out-of-scope calls are flagged. On: they're denied outright.",
+                      $settings.scopeEnforce)
 
             caption("STARTUP")
             startupRow

@@ -50,8 +50,12 @@ questions that actually matter when you're writing up what an agent did.
 | **⚠️ See the risk first** | `rm -rf`, `curl \| sh`, `sudo`, writes outside the working dir, edits to `.ssh` / `.env`, force-pushes — flagged before you decide. Edits show the real diff. |
 | **🛰️ Egress & exfil lens** | Catches data *leaving the box* — file uploads, `cat` a secret into `curl`/`nc`, base64-then-send, `scp`/`rsync` to a remote, new dependencies in a manifest. |
 | **🔭 Command pre-flight** | Before you approve Bash, see what `rm -rf` would *actually* delete (real file count + sample paths) and what a force-push / reset / clean will destroy. |
-| **📜 Policy engine** | Declarative **allow / deny / ask** rules — by tool, path glob, command regex, risk, scope, or host — checked before any auto-allow. A deny is honoured even out of scope. |
-| **🎯 Scope guard** | Define your engagement targets; out-of-scope hosts in a command get called out. |
+| **📜 Policy engine** | Declarative **allow / deny / ask** rules — by tool, path glob, command regex, risk, scope, or host — checked before any auto-allow. Importable **packs**, one-tap rules **learned** from what you keep denying, and a **regression harness** to replay a draft against your history. |
+| **🍯 Honeytokens** | Plant decoys an agent must never touch. Any access is treated as an incident — denied, panic armed, alerted. Active deception, pointed inward. |
+| **🕵️ Anomaly cues** | A per-project behavioral fingerprint flags first-seen behavior on the card — "first `nc` command here", "first use of WebFetch". |
+| **⏪ Session replay** | Scrub through everything an agent did in a project, in order, and jump to the high-risk moments. Reconstructed from the tamper-evident log. |
+| **🎯 Scope guard** | Define your engagement targets; out-of-scope hosts get called out — or **auto-denied** when you enforce scope. |
+| **💸 Token governor** | A per-session token budget that warns — and can trip the panic brake — on a runaway. |
 | **⏱️ Trust windows** | "Trust reads here for 5 minutes" — a time-boxed auto-approve with a live countdown that revokes itself. No permanent grant left behind. |
 | **🛑 Panic stop** | One click denies every call instantly, plus a recoverable `git stash` undo of an agent's edits. |
 | **🔗 Tamper-evident audit log** | Every decision HMAC-chained to the last; a built-in verifier flags any altered, removed, or reordered record. Exportable as an engagement report. |
