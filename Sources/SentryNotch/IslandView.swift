@@ -916,6 +916,20 @@ private struct RulesView: View {
 private struct PermissionCard: View {
     let req: PermissionRequest
     @ObservedObject var model: AppModel
+    @State private var confirmAction: (() -> Void)?
+    @State private var confirmLabel = ""
+
+    /// Dual control: an allow needs a second confirmation when the call is
+    /// high-risk or out of scope. The keyboard combos (⌘2–⌘4) are deliberate
+    /// multi-key presses already, so the guard is on the one-click buttons.
+    private var guarded: Bool {
+        model.settings.dualApprovalEnabled
+            && (req.risk.level >= .high || !model.scopeFlags(req).isEmpty)
+    }
+
+    private func guardAllow(_ label: String, _ run: @escaping () -> Void) {
+        if guarded { confirmLabel = label; confirmAction = run } else { run() }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -932,9 +946,23 @@ private struct PermissionCard: View {
             countdown
             HStack(spacing: 6) {
                 PillButton(title: "Deny", key: "⌘1", style: .plain) { model.deny(req) }
-                PillButton(title: "Allow Once", key: "⌘2", style: .primary) { model.allowOnce(req) }
-                PillButton(title: "Always", key: "⌘3", style: .plain) { model.alwaysAllow(req, source: "Always button") }
-                PillButton(title: "Bypass", key: "⌘4", style: .danger) { model.bypass(req) }
+                PillButton(title: "Allow Once", key: "⌘2", style: .primary) { guardAllow("Allow Once") { model.allowOnce(req) } }
+                PillButton(title: "Always", key: "⌘3", style: .plain) { guardAllow("Always") { model.alwaysAllow(req, source: "Always button") } }
+                PillButton(title: "Bypass", key: "⌘4", style: .danger) { guardAllow("Bypass") { model.bypass(req) } }
+            }
+            if let action = confirmAction {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.shield.fill").font(.system(size: 11))
+                    Text("Dangerous — confirm \(confirmLabel)").font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                    Button("Confirm") { action(); confirmAction = nil }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4).background(Capsule().fill(Color.red))
+                    Button("Cancel") { confirmAction = nil }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(CC.textDim)
+                }
+                .foregroundStyle(.red).padding(8)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.14)))
             }
             steerRow
             trustRow

@@ -163,6 +163,10 @@ final class AppSettings: ObservableObject {
     @Published var tokenGuardEnabled: Bool { didSet { saveIfLoaded() } }
     @Published var tokenBudget: Int { didSet { saveIfLoaded() } }
     @Published var tokenGuardPanics: Bool { didSet { saveIfLoaded() } }
+    /// Dual control: require a second, explicit confirmation before *allowing* a
+    /// high-risk or out-of-scope call — so the dangerous ones can't be waved
+    /// through with a single reflexive click. Off by default.
+    @Published var dualApprovalEnabled: Bool { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -201,6 +205,7 @@ final class AppSettings: ObservableObject {
         tokenGuardEnabled = false
         tokenBudget = 800_000
         tokenGuardPanics = false
+        dualApprovalEnabled = false
         load()
         loaded = true
     }
@@ -284,6 +289,7 @@ final class AppSettings: ObservableObject {
         var tokenGuardEnabled = false
         var tokenBudget = 800_000
         var tokenGuardPanics = false
+        var dualApprovalEnabled = false
 
         init() {}
 
@@ -324,6 +330,7 @@ final class AppSettings: ObservableObject {
             tokenGuardEnabled = (try? c.decode(Bool.self, forKey: .tokenGuardEnabled)) ?? false
             tokenBudget = (try? c.decode(Int.self, forKey: .tokenBudget)) ?? 800_000
             tokenGuardPanics = (try? c.decode(Bool.self, forKey: .tokenGuardPanics)) ?? false
+            dualApprovalEnabled = (try? c.decode(Bool.self, forKey: .dualApprovalEnabled)) ?? false
         }
     }
 
@@ -363,6 +370,7 @@ final class AppSettings: ObservableObject {
         tokenGuardEnabled = s.tokenGuardEnabled
         tokenBudget = s.tokenBudget
         tokenGuardPanics = s.tokenGuardPanics
+        dualApprovalEnabled = s.dualApprovalEnabled
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -401,6 +409,7 @@ final class AppSettings: ObservableObject {
         s.tokenGuardEnabled = tokenGuardEnabled
         s.tokenBudget = tokenBudget
         s.tokenGuardPanics = tokenGuardPanics
+        s.dualApprovalEnabled = dualApprovalEnabled
         guard let data = try? JSONEncoder().encode(s) else { return }
         // Atomic: policy-rule and webhook edits save on every keystroke, so a
         // crash mid-write must not truncate settings.json — a corrupt file

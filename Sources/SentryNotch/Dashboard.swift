@@ -666,6 +666,9 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             caption("SECURITY POSTURE")
             postureRow
+            toggleRow("Dual control on dangerous allows",
+                      "Require a second confirmation to allow a high-risk or out-of-scope call",
+                      $settings.dualApprovalEnabled)
 
             caption("STARTUP")
             startupRow
