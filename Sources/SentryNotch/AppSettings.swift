@@ -154,6 +154,23 @@ final class AppSettings: ObservableObject {
     @Published var alertsEnabled: Bool { didSet { saveIfLoaded() } }
     @Published var alertWebhookURL: String { didSet { saveIfLoaded() } }
     @Published var alertsAllPrompts: Bool { didSet { saveIfLoaded() } }
+    /// Active deception. Off by default; when armed, a tool call that touches a
+    /// decoy is denied and the panic brake is armed.
+    @Published var honeytokensEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var honeytokens: [Honeytoken] { didSet { saveIfLoaded() } }
+    /// Token/cost governor. Off by default; alerts when a session's context
+    /// tokens cross the budget, and can auto-arm panic if `tokenGuardPanics`.
+    @Published var tokenGuardEnabled: Bool { didSet { saveIfLoaded() } }
+    @Published var tokenBudget: Int { didSet { saveIfLoaded() } }
+    @Published var tokenGuardPanics: Bool { didSet { saveIfLoaded() } }
+    /// Dual control: require a second, explicit confirmation before *allowing* a
+    /// high-risk or out-of-scope call — so the dangerous ones can't be waved
+    /// through with a single reflexive click. Off by default.
+    @Published var dualApprovalEnabled: Bool { didSet { saveIfLoaded() } }
+    /// Scope enforcement: auto-deny any out-of-scope call outright, rather than
+    /// only flagging it. Permission-layer only (no network/pf changes). Off by
+    /// default — the scope guard flags but doesn't block until you arm this.
+    @Published var scopeEnforce: Bool { didSet { saveIfLoaded() } }
 
     private let path: String
     private var loaded = false
@@ -187,6 +204,13 @@ final class AppSettings: ObservableObject {
         alertsEnabled = false
         alertWebhookURL = ""
         alertsAllPrompts = false
+        honeytokensEnabled = false
+        honeytokens = []
+        tokenGuardEnabled = false
+        tokenBudget = 800_000
+        tokenGuardPanics = false
+        dualApprovalEnabled = false
+        scopeEnforce = false
         load()
         loaded = true
     }
@@ -265,6 +289,13 @@ final class AppSettings: ObservableObject {
         var alertsEnabled = false
         var alertWebhookURL = ""
         var alertsAllPrompts = false
+        var honeytokensEnabled = false
+        var honeytokens: [Honeytoken] = []
+        var tokenGuardEnabled = false
+        var tokenBudget = 800_000
+        var tokenGuardPanics = false
+        var dualApprovalEnabled = false
+        var scopeEnforce = false
 
         init() {}
 
@@ -300,6 +331,13 @@ final class AppSettings: ObservableObject {
             alertsEnabled = (try? c.decode(Bool.self, forKey: .alertsEnabled)) ?? false
             alertWebhookURL = (try? c.decode(String.self, forKey: .alertWebhookURL)) ?? ""
             alertsAllPrompts = (try? c.decode(Bool.self, forKey: .alertsAllPrompts)) ?? false
+            honeytokensEnabled = (try? c.decode(Bool.self, forKey: .honeytokensEnabled)) ?? false
+            honeytokens = (try? c.decode([Honeytoken].self, forKey: .honeytokens)) ?? []
+            tokenGuardEnabled = (try? c.decode(Bool.self, forKey: .tokenGuardEnabled)) ?? false
+            tokenBudget = (try? c.decode(Int.self, forKey: .tokenBudget)) ?? 800_000
+            tokenGuardPanics = (try? c.decode(Bool.self, forKey: .tokenGuardPanics)) ?? false
+            dualApprovalEnabled = (try? c.decode(Bool.self, forKey: .dualApprovalEnabled)) ?? false
+            scopeEnforce = (try? c.decode(Bool.self, forKey: .scopeEnforce)) ?? false
         }
     }
 
@@ -334,6 +372,13 @@ final class AppSettings: ObservableObject {
         alertsEnabled = s.alertsEnabled
         alertWebhookURL = s.alertWebhookURL
         alertsAllPrompts = s.alertsAllPrompts
+        honeytokensEnabled = s.honeytokensEnabled
+        honeytokens = s.honeytokens
+        tokenGuardEnabled = s.tokenGuardEnabled
+        tokenBudget = s.tokenBudget
+        tokenGuardPanics = s.tokenGuardPanics
+        dualApprovalEnabled = s.dualApprovalEnabled
+        scopeEnforce = s.scopeEnforce
     }
 
     private func saveIfLoaded() { if loaded { save() } }
@@ -367,6 +412,13 @@ final class AppSettings: ObservableObject {
         s.alertsEnabled = alertsEnabled
         s.alertWebhookURL = alertWebhookURL
         s.alertsAllPrompts = alertsAllPrompts
+        s.honeytokensEnabled = honeytokensEnabled
+        s.honeytokens = honeytokens
+        s.tokenGuardEnabled = tokenGuardEnabled
+        s.tokenBudget = tokenBudget
+        s.tokenGuardPanics = tokenGuardPanics
+        s.dualApprovalEnabled = dualApprovalEnabled
+        s.scopeEnforce = scopeEnforce
         guard let data = try? JSONEncoder().encode(s) else { return }
         // Atomic: policy-rule and webhook edits save on every keystroke, so a
         // crash mid-write must not truncate settings.json — a corrupt file

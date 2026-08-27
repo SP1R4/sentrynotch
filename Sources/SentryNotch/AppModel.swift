@@ -173,8 +173,35 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Per-project behavioral fingerprints, for first-seen anomaly cues on the
+    /// prompt card. Built once from history, updated as decisions are recorded.
+    private var profiles: [String: AgentProfile] = [:]
+
+    private func loadProfiles() {
+        let log = audit
+        Task { @MainActor in
+            let rows = await Task.detached(priority: .utility) { log.rows(limit: 20_000) }.value
+            var built: [String: AgentProfile] = [:]
+            for r in rows where !r.project.isEmpty {
+                built[r.project, default: AgentProfile()].add(tool: r.tool, key: r.key)
+            }
+            // The history read is authoritative for the baseline; a handful of
+            // calls that landed mid-load are re-folded in on their next record.
+            profiles = built
+        }
+    }
+
+    /// First-seen anomaly flags for a call, versus its project's baseline.
+    func novelty(for req: PermissionRequest) -> [String] {
+        let project = (req.cwd as NSString).lastPathComponent
+        guard let profile = profiles[project] else { return [] }
+        return noveltyFlags(profile: profile, tool: req.toolName,
+                            key: ruleKey(toolName: req.toolName, input: req.toolInput))
+    }
+
     func start() {
         ipc.start()
+        loadProfiles()
         monitor.start()
         notifications.start()
         updates.start()
@@ -289,6 +316,29 @@ final class AppModel: ObservableObject {
 
     /// The current chain head, for anchoring the log off-box.
     func auditHeadMAC() -> String { audit.headMAC() }
+
+    /// Replay a draft policy over history — "what would this have changed?"
+    nonisolated func policyReplayAsync(rules: [PolicyRule]) async -> PolicyReplay {
+        let log = audit
+        return await Task.detached(priority: .utility) {
+            let rows = log.recent(limit: 20_000).map { e -> ReplayRow in
+                let cmd = e.tool == "Bash" ? e.summary : nil
+                let paths = (e.summary.hasPrefix("/") || e.summary.hasPrefix("~")) ? [e.summary] : []
+                let outcome = e.decision.hasPrefix("allow") ? "allow" : "deny"
+                return ReplayRow(tool: e.tool, command: cmd, paths: paths,
+                                 risk: riskLevelFromLabel(e.risk), actualOutcome: outcome)
+            }
+            return replayPolicy(rows: rows, rules: rules)
+        }.value
+    }
+
+    /// Deny rules the decision log suggests, computed off the main thread.
+    nonisolated func policySuggestionsAsync(existing: [PolicyRule]) async -> [PolicySuggestion] {
+        let log = audit
+        return await Task.detached(priority: .utility) {
+            suggestPolicyRules(rows: log.rows(limit: 20_000), existing: existing)
+        }.value
+    }
 
     /// Standing rules the decision log suggests. Recomputed sparingly: it reads
     /// the whole log, and view code touches it on every prompt render.
@@ -459,12 +509,45 @@ final class AppModel: ObservableObject {
         // risk and scope irrelevant.
         if panic { finish(req, "deny", "Panic stop armed — denied via Sentry Notch", auto: true); return }
 
+        // Honeytoken tripwire: touching a decoy is an incident, not a prompt —
+        // deny it and arm the panic brake so nothing else gets through either.
+        if settings.honeytokensEnabled, !settings.honeytokens.isEmpty {
+            var paths: [String] = []
+            for key in ["file_path", "notebook_path", "path"] {
+                if let p = req.toolInput[key] as? String { paths.append(p) }
+            }
+            let tripped = trippedHoneytokens(command: req.toolInput["command"] as? String,
+                                             paths: paths, tokens: settings.honeytokens)
+            if !tripped.isEmpty {
+                let names = tripped.map(\.label).joined(separator: ", ")
+                finish(req, "deny", "Honeytoken tripped: \(names)", auto: true)
+                setPanic(true)
+                showFlash("🍯 Honeytoken tripped (\(names)) — denied and panic armed")
+                if settings.alertsEnabled, !settings.alertWebhookURL.isEmpty {
+                    let ev = AlertEvent(event: "decision", tool: req.toolName,
+                        project: (req.cwd as NSString).lastPathComponent,
+                        risk: "danger", outOfScope: [], summary: "honeytoken tripped: \(names)",
+                        decision: "deny", ts: ISO8601DateFormatter().string(from: Date()))
+                    AlertNotifier(url: settings.alertWebhookURL).send(ev)
+                }
+                return
+            }
+        }
+
         // Scope is the engagement's legal boundary, so it outranks every
         // convenience grant. A stale Always-Allow rule or a session bypass must
         // not be able to wave through a host you aren't cleared to touch — an
         // out-of-scope call always surfaces, and fail-closed can still deny it
         // at the deadline.
         let breach = scopeFlags(req)
+
+        // Scope enforcement: when armed, an out-of-scope call is denied outright
+        // rather than surfaced. Scope is the engagement's legal boundary, so
+        // this outranks the policy engine and every convenience grant.
+        if settings.scopeEnforce, !breach.isEmpty {
+            finish(req, "deny", "Out of engagement scope — auto-denied (\(breach.joined(separator: ", ")))", auto: true)
+            return
+        }
 
         // Declarative policy runs before the convenience tiers. An explicit
         // deny is honoured even out of scope (fail-closed); an explicit allow is
@@ -588,6 +671,12 @@ final class AppModel: ObservableObject {
     // MARK: - UI actions
 
     func deny(_ req: PermissionRequest) { finish(req, "deny", "Denied from Sentry Notch") }
+
+    /// Deny with an instructive reason the agent receives — steers it toward a
+    /// safer approach instead of just blocking.
+    func denyWithReason(_ req: PermissionRequest, _ reason: String) {
+        finish(req, "deny", reason)
+    }
     func allowOnce(_ req: PermissionRequest) { finish(req, "allow", "Allowed from Sentry Notch") }
 
     func alwaysAllow(_ req: PermissionRequest, source: String = "prompt") {
@@ -832,6 +921,12 @@ final class AppModel: ObservableObject {
                          sessionID: req.sessionID, cwd: req.cwd,
                          riskLevel: req.risk.level.label,
                          key: ruleKey(toolName: req.toolName, input: req.toolInput))
+            // Fold this call into the project's behavioral baseline.
+            let project = (req.cwd as NSString).lastPathComponent
+            if !project.isEmpty {
+                profiles[project, default: AgentProfile()]
+                    .add(tool: req.toolName, key: ruleKey(toolName: req.toolName, input: req.toolInput))
+            }
         }
         notifications.withdraw(id: req.id)
         pending.removeAll { $0.id == req.id }
@@ -945,8 +1040,34 @@ final class AppModel: ObservableObject {
         lifecycle[card.id] == nil
     }
 
+    /// Sessions that have already tripped the token budget, so it fires once
+    /// per session rather than on every refresh.
+    private var tokenGuardFired = Set<String>()
+
+    /// Alert (and optionally panic) when a session's context tokens cross the
+    /// budget. One-shot per session; forgets sessions that end.
+    private func checkTokenBudget(_ cards: [SessionCard]) {
+        guard settings.tokenGuardEnabled, settings.tokenBudget > 0 else { return }
+        let liveIDs = Set(cards.map(\.id))
+        tokenGuardFired.formIntersection(liveIDs)   // forget ended sessions
+        for card in cards where card.tokens >= settings.tokenBudget && !tokenGuardFired.contains(card.id) {
+            tokenGuardFired.insert(card.id)
+            let k = card.tokens / 1000
+            showFlash("💸 \(card.project): \(k)k tokens — over the \(settings.tokenBudget / 1000)k budget")
+            NSSound(named: "Funk")?.play()
+            if settings.alertsEnabled, !settings.alertWebhookURL.isEmpty {
+                let ev = AlertEvent(event: "decision", tool: "budget", project: card.project,
+                    risk: "caution", outOfScope: [], summary: "\(k)k tokens over budget",
+                    decision: nil, ts: ISO8601DateFormatter().string(from: Date()))
+                AlertNotifier(url: settings.alertWebhookURL).send(ev)
+            }
+            if settings.tokenGuardPanics { setPanic(true) }
+        }
+    }
+
     private func applySessions(_ cards: [SessionCard], force: Bool = false) {
         monitorCards = cards
+        checkTokenBudget(cards)
         let next: [SessionCard] = cards.compactMap { card in
             let live = resumed(card)
             if !live, lifecycle[card.id]?.ended == true { return nil }

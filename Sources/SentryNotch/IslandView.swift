@@ -916,6 +916,20 @@ private struct RulesView: View {
 private struct PermissionCard: View {
     let req: PermissionRequest
     @ObservedObject var model: AppModel
+    @State private var confirmAction: (() -> Void)?
+    @State private var confirmLabel = ""
+
+    /// Dual control: an allow needs a second confirmation when the call is
+    /// high-risk or out of scope. The keyboard combos (⌘2–⌘4) are deliberate
+    /// multi-key presses already, so the guard is on the one-click buttons.
+    private var guarded: Bool {
+        model.settings.dualApprovalEnabled
+            && (req.risk.level >= .high || !model.scopeFlags(req).isEmpty)
+    }
+
+    private func guardAllow(_ label: String, _ run: @escaping () -> Void) {
+        if guarded { confirmLabel = label; confirmAction = run } else { run() }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -923,6 +937,7 @@ private struct PermissionCard: View {
             Text("Claude wants to run \(req.toolName)")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(CC.text)
             RiskBanner(risk: req.risk)
+            NoveltyBanner(flags: model.novelty(for: req))
             ScopeBanner(hosts: model.scopeFlags(req))
             BlastBanner(radius: model.blast(req))
             DetailView(detail: req.detail)
@@ -931,10 +946,25 @@ private struct PermissionCard: View {
             countdown
             HStack(spacing: 6) {
                 PillButton(title: "Deny", key: "⌘1", style: .plain) { model.deny(req) }
-                PillButton(title: "Allow Once", key: "⌘2", style: .primary) { model.allowOnce(req) }
-                PillButton(title: "Always", key: "⌘3", style: .plain) { model.alwaysAllow(req, source: "Always button") }
-                PillButton(title: "Bypass", key: "⌘4", style: .danger) { model.bypass(req) }
+                PillButton(title: "Allow Once", key: "⌘2", style: .primary) { guardAllow("Allow Once") { model.allowOnce(req) } }
+                PillButton(title: "Always", key: "⌘3", style: .plain) { guardAllow("Always") { model.alwaysAllow(req, source: "Always button") } }
+                PillButton(title: "Bypass", key: "⌘4", style: .danger) { guardAllow("Bypass") { model.bypass(req) } }
             }
+            if let action = confirmAction {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.shield.fill").font(.system(size: 11))
+                    Text("Dangerous — confirm \(confirmLabel)").font(.system(size: 11, weight: .semibold))
+                    Spacer()
+                    Button("Confirm") { action(); confirmAction = nil }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4).background(Capsule().fill(Color.red))
+                    Button("Cancel") { confirmAction = nil }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(CC.textDim)
+                }
+                .foregroundStyle(.red).padding(8)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.red.opacity(0.14)))
+            }
+            steerRow
             trustRow
         }
         .padding(13)
@@ -945,6 +975,25 @@ private struct PermissionCard: View {
     private var borderColor: Color {
         req.risk.level >= .high ? Color.red.opacity(0.55)
             : req.risk.level >= .medium ? Color.orange.opacity(0.45) : CC.coral.opacity(0.45)
+    }
+
+    /// Deny with an instructive reason the agent receives — steering it toward a
+    /// safer approach. The reasons offered are matched to why the call was flagged.
+    private var steerRow: some View {
+        Menu {
+            ForEach(steerReasons(for: req.risk.reasons, outOfScope: !model.scopeFlags(req).isEmpty), id: \.self) { reason in
+                Button(reason) { model.denyWithReason(req, reason) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrowshape.turn.up.backward").font(.system(size: 9))
+                Text("Deny with a reason").font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(CC.textDim)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(CC.surfaceHi))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
     }
 
     /// Time-boxed trust: approve the routine stuff for a few minutes without a
@@ -1086,6 +1135,23 @@ private struct PreflightBanner: View {
         case .danger: return "exclamationmark.octagon.fill"
         case .caution: return "exclamationmark.triangle.fill"
         case .info: return "info.circle"
+        }
+    }
+}
+
+/// First-seen anomaly cues — behavior this project's agent hasn't shown before.
+private struct NoveltyBanner: View {
+    let flags: [String]
+    var body: some View {
+        if !flags.isEmpty {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "sparkle.magnifyingglass").font(.system(size: 11))
+                Text(flags.joined(separator: " · "))
+                    .font(.system(size: 11, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Color(red: 0.66, green: 0.52, blue: 0.92)).padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color(red: 0.66, green: 0.52, blue: 0.92).opacity(0.14)))
         }
     }
 }

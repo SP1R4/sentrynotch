@@ -58,6 +58,9 @@ struct DashboardView: View {
         ?? .activity
     @State private var stats = AnalyticsSummary()
     @State private var tokens: [Tally] = []
+    @State private var policySuggestions: [PolicySuggestion] = []
+    @State private var replay: PolicyReplay?
+    @State private var replaying = false
     @State private var integrity: AuditVerification?
     @State private var integrityLegacy = 0
     @State private var verifying = false
@@ -107,6 +110,11 @@ struct DashboardView: View {
                 let v = await model.ruleUsageReportAsync(rules: keys)
                 if gen == generation { rules = v }
             }
+        case .policy:
+            Task {
+                let v = await model.policySuggestionsAsync(existing: settings.policyRules)
+                if gen == generation { policySuggestions = v }
+            }
         case .scope:
             // Small file, read synchronously; and re-read on every open so an
             // edit made outside the app is never silently overwritten by a
@@ -141,7 +149,7 @@ struct DashboardView: View {
 
     enum Tab: String, CaseIterable, Identifiable {
         case activity = "Activity", rules = "Rules", policy = "Policy", scope = "Scope"
-        case analytics = "Analytics"
+        case analytics = "Analytics", replay = "Replay"
         case appearance = "Appearance", widgets = "Widgets", plugins = "Plugins"
         var id: String { rawValue }
     }
@@ -162,6 +170,7 @@ struct DashboardView: View {
                     case .widgets:    widgetsTab
                     case .plugins:    pluginsTab
                     case .analytics:  analyticsTab
+                    case .replay:     ReplayView(model: model)
                     }
                 }
                 .padding(16)
@@ -221,7 +230,82 @@ struct DashboardView: View {
 
     // MARK: - Policy
 
-    private var policyTab: some View { PolicyEditor(settings: settings) }
+    private var policyTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !policySuggestions.isEmpty {
+                caption("SUGGESTED FROM YOUR HISTORY")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Patterns you've consistently denied — one tap promotes them to a rule.")
+                        .font(.system(size: 11)).foregroundStyle(CC.textDim)
+                    ForEach(policySuggestions) { s in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(s.rule.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(CC.text)
+                                Text(s.rationale).font(.system(size: 10)).foregroundStyle(CC.textDim)
+                            }
+                            Spacer()
+                            Button {
+                                settings.policyRules.append(s.rule)
+                                policySuggestions.removeAll { $0.id == s.id }
+                            } label: {
+                                Label("Add", systemImage: "plus").font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(Capsule().fill(settings.accentColor))
+                            }.buttonStyle(.plain)
+                            Button { policySuggestions.removeAll { $0.id == s.id } } label: {
+                                Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(CC.textFaint)
+                            }.buttonStyle(.plain)
+                        }
+                        .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+                    }
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+            }
+            PolicyEditor(settings: settings)
+
+            if !settings.policyRules.isEmpty {
+                caption("REGRESSION TEST")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Replay your decision history against these rules — what would they have changed?")
+                        .font(.system(size: 11)).foregroundStyle(CC.textDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button { runReplay() } label: {
+                            Label(replaying ? "Replaying…" : "Test against history", systemImage: "clock.arrow.circlepath")
+                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(settings.accentColor))
+                        }.buttonStyle(.plain).disabled(replaying)
+                        Spacer()
+                    }
+                    if let r = replay {
+                        Text("Over **\(r.evaluated)** matched calls: **\(r.wouldDeny)** deny · **\(r.wouldPrompt)** ask · **\(r.wouldAllow)** allow")
+                            .font(.system(size: 11)).foregroundStyle(CC.text)
+                        if r.newlyCaught > 0 {
+                            Label("\(r.newlyCaught) call\(r.newlyCaught == 1 ? "" : "s") you allowed would now be denied — caught", systemImage: "checkmark.shield.fill")
+                                .font(.system(size: 11, weight: .medium)).foregroundStyle(Color(red: 0.35, green: 0.72, blue: 0.5))
+                        }
+                        if r.newlyAllowed > 0 {
+                            Label("\(r.newlyAllowed) call\(r.newlyAllowed == 1 ? "" : "s") you denied would now be allowed — check this", systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11, weight: .medium)).foregroundStyle(.orange)
+                        }
+                        Text("Scope and host rules aren't replayable — the log doesn't retain hosts.")
+                            .font(.system(size: 9)).foregroundStyle(CC.textFaint)
+                    }
+                }
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+            }
+        }
+    }
+
+    private func runReplay() {
+        replaying = true
+        Task {
+            let r = await model.policyReplayAsync(rules: settings.policyRules)
+            replay = r
+            replaying = false
+        }
+    }
 
     // MARK: - Appearance
 
@@ -582,6 +666,12 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             caption("SECURITY POSTURE")
             postureRow
+            toggleRow("Dual control on dangerous allows",
+                      "Require a second confirmation to allow a high-risk or out-of-scope call",
+                      $settings.dualApprovalEnabled)
+            toggleRow("Enforce scope (auto-deny out-of-scope)",
+                      "Off: out-of-scope calls are flagged. On: they're denied outright.",
+                      $settings.scopeEnforce)
 
             caption("STARTUP")
             startupRow
@@ -599,7 +689,42 @@ struct DashboardView: View {
 
             caption("OFF-BOX ALERTS")
             alertsPanel
+
+            caption("HONEYTOKENS")
+            HoneytokenEditor(settings: settings)
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
+
+            caption("TOKEN GOVERNOR")
+            tokenGovernorPanel
         }
+    }
+
+    private var tokenGovernorPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            toggleRow("Warn on a token budget",
+                      "Alert when a session's context tokens cross the ceiling",
+                      $settings.tokenGuardEnabled)
+            HStack(spacing: 8) {
+                Text("Budget").font(.system(size: 11)).foregroundStyle(CC.textDim)
+                Menu {
+                    ForEach([200_000, 500_000, 800_000, 1_000_000, 1_500_000, 2_000_000], id: \.self) { b in
+                        Button("\(b / 1000)k tokens") { settings.tokenBudget = b }
+                    }
+                } label: {
+                    Text("\(settings.tokenBudget / 1000)k tokens")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(CC.text)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(CC.surfaceHi))
+                }.menuStyle(.borderlessButton).fixedSize()
+                Spacer()
+            }
+            .disabled(!settings.tokenGuardEnabled).opacity(settings.tokenGuardEnabled ? 1 : 0.5)
+            toggleRow("Auto-arm panic when exceeded",
+                      "Off (default): warn only. On: crossing the budget denies everything until you release.",
+                      $settings.tokenGuardPanics)
+                .disabled(!settings.tokenGuardEnabled).opacity(settings.tokenGuardEnabled ? 1 : 0.5)
+        }
+        .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(CC.surface))
     }
 
     private var alertsPanel: some View {

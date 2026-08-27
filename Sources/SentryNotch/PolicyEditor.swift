@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import SentryNotchCore
 
 /// Editor for the declarative policy (allow / deny / ask rules evaluated before
@@ -26,6 +28,8 @@ struct PolicyEditor: View {
             }
             .padding(12).background(card)
 
+            packsRow
+
             if settings.policyRules.isEmpty {
                 emptyState
             } else {
@@ -41,6 +45,66 @@ struct PolicyEditor: View {
                 }
             }
         }
+    }
+
+    // MARK: - Packs / import / export
+
+    private var packsRow: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(builtinPolicyPacks()) { pack in
+                    Button {
+                        settings.policyRules.append(contentsOf: pack.rules.map { reidRule($0) })
+                    } label: { Text("\(pack.name) — \(pack.summary)") }
+                }
+            } label: {
+                Label("Add pack", systemImage: "square.stack.3d.up")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(CC.text)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+            }.menuStyle(.borderlessButton).fixedSize()
+
+            Button(action: importRules) {
+                Label("Import…", systemImage: "square.and.arrow.down").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(CC.text).padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+            }.buttonStyle(.plain)
+
+            Button(action: exportRules) {
+                Label("Export…", systemImage: "square.and.arrow.up").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(CC.text).padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(CC.surfaceHi))
+            }.buttonStyle(.plain).disabled(settings.policyRules.isEmpty)
+            Spacer()
+        }
+    }
+
+    private func reidRule(_ r: PolicyRule) -> PolicyRule {
+        PolicyRule(name: r.name, effect: r.effect, enabled: r.enabled, tools: r.tools,
+                   pathGlob: r.pathGlob, commandRegex: r.commandRegex, minRisk: r.minRisk,
+                   scope: r.scope, hostGlob: r.hostGlob)
+    }
+
+    private func importRules() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.message = "Import a policy pack or a list of rules (JSON)."
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url),
+              let rules = parsePolicyImport(data) else { return }
+        settings.policyRules.append(contentsOf: rules)
+    }
+
+    private func exportRules() {
+        let pack = PolicyPack(id: "custom", name: "My policy",
+                              summary: "Exported from Sentry Notch", rules: settings.policyRules)
+        guard let data = pack.encoded() else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "sentrynotch-policy.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? data.write(to: url)
     }
 
     // MARK: - Empty state
